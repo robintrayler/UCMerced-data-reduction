@@ -1,0 +1,469 @@
+---
+set_title: 'TCEA Report'
+author: "Robin B. Trayler"
+date: "`r format(Sys.time(), '%B, %d, %Y')`"
+output:
+  html_document:
+    toc: yes
+    toc_depth: 2
+    toc_float: yes
+    df_print: paged
+  pdf_document:
+    toc: yes
+    toc_depth: '2'
+---
+
+```{css, echo=FALSE}
+.block-format {
+  background-color: lightgrey2;
+  border: 2px solid black;
+  font-weight: bold;
+}
+
+/* Whole document: */
+  body{
+    font-family: Helvetica;
+    font-size: 12pt;
+  }
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+The $\delta^{18}O$ values  of all samples were measured using a **ThermoFisher TC/EA** coupled with a **Delta V Plus Continuous Flow Isotope Ratio Mass Spectrometer** housed in the Stable Isotope Facility at the University of California, Merced. 
+
+This report includes several files:
+
+1) A `.html` or `.pdf` report summarizing all data corrections and instrument reproducibility
+2) A `.csv` file with the corrected data
+3) A `.csv` file with the uncorrected data 
+4) A `.Rmd` (R Markdown) document containing the **R** code used to correct the data
+
+If you would like the original Isodat 3.0 `.dxf` files please request by sending an email to stableisotopes@ucmerced.edu
+
+
+```{r, message = FALSE, echo = FALSE}
+library(tidyverse)
+library(viridis)
+library(cowplot)
+library(lubridate)
+theme_set(theme_bw()) # set ggplot theme
+```
+
+```{r, echo = FALSE}
+z_score <- function(x) {
+  abs(x - mean(x)) / sd(x)
+}
+```
+
+```{r, echo = FALSE, message = FALSE}
+# standards <- read_csv(file = './data/EA_standards.csv')
+standards <- tribble(~id2,      ~d18O_true,
+                     'USGS 80',   13.1, 
+                     'USGS 81',   35.4,
+                     'IAEA 601',  23.3,
+                     'CBS',       3.8,
+                     'KHS',       20.3,
+                     'EA Ag3PO4', 21.7)
+
+colors <- viridis(n = length(standards$id2) + 1)
+names(colors) <- c(standards$id2, TRUE)
+```
+
+# Setup {.tabset}
+## File Path
+```{r}
+# file path to the isodat csv file 
+file_path <- '~/Box Sync/Data Repository/TCEA/TCEA20210114.csv'
+```
+
+## Analysis Parameters
+### Select Sample Peaks
+```{r}
+# Which peak is the CO analyte?
+oxygen_peak <- 3
+# How many total peaks should there be?
+total_peaks <- 3
+```
+
+### Set Rejection Criteria
+```{r}
+# rejection criteria
+small_peaks <- 500 # warn about peaks smaller with an amplitude smaller than this
+# should 2 sigma outlier standards be dropped from isotope corrections
+drop_outliers <- FALSE 
+```
+
+### Select Correction Standards
+```{r}
+# standards used in run
+standards_used = c('USGS 80', 'USGS 81')
+# material to use for linearity corrections
+linearity_material =  c('USGS 80', 'USGS 81')
+# material to use for drift corrections
+drift_material = c('USGS 80', 'USGS 81')
+# in house 'check' materials for run quality
+check_material = c('EA Ag3PO4', 'IAEA 601', 'NIST 120C', 'alfa asar')
+```
+
+## Drift and Linearity Model Specification
+### Instrument Drift
+```{r}
+# should a drift correction be applied to oxygen
+oxygen_drift <- TRUE
+# model choices are either 'lm' for linear or 'loess' for loess
+oxygen_drift_model <- 'lm'
+```
+
+### Mass Linearity
+```{r}
+# should a linearity correction be applied?
+# mass linearity corrections use a linear model
+oxygen_linearity <- TRUE
+```
+
+```{r, echo = FALSE}
+# set the document file name to the name of the data file read in
+file_name = tools::file_path_sans_ext(basename(file_path))
+current_year <- format(Sys.Date(), '%Y')
+
+#Check if directories exists and create if they doesn't
+if(!dir.exists(path = paste0('~/Box Sync/Data Repository/TCEA/Corrected/',current_year))) {
+  dir.create(path = paste0('~/Box Sync/Data Repository/TCEA/Corrected/',current_year))
+}
+
+if(!dir.exists(path = paste0('~/Box Sync/Data Repository/TCEA/Corrected/',current_year,'/',file_name))) {
+  dir.create(path = paste0(path = paste0('~/Box Sync/Data Repository/TCEA/Corrected/',current_year,'/',file_name)))
+}
+```
+---
+title: "`r paste(file_name,' Report')`"
+---
+
+# Data Screening {.tabset}
+```{r, message = FALSE, echo = FALSE}
+# read data
+raw_data <- read_csv(file = file_path)
+
+data <- raw_data %>% 
+  select(seq_nr = Row,
+         id1 = `Identifier 1`, 
+         id2 = `Identifier 2`,
+         peak_nr = `Peak Nr.`,
+         weight = Amount,
+         area28 = `Area 28`,
+         amp28 = `Ampl. 28`,
+         amp30 = `Ampl. 30`,
+         area30 = `Area 30`,
+         d18O_measured = `d 18O/16O`)
+```
+
+## Check for Missing Peaks
+```{r, echo = FALSE, message = FALSE}
+# check for missing peaks
+missing <- data %>% 
+  group_by(id1) %>% 
+  summarize(n = !(n() == total_peaks))
+```
+Sample(s) with an Identifier 1 of __`r missing$id1[missing$n]`__ have fewer peaks than expected. Please check the raw data.
+
+## Check for Small Peaks
+```{r, echo = FALSE}
+small_O <- data %>% 
+  filter(peak_nr %in% oxygen_peak & amp28 < small_peaks) %>% 
+  select(id1)
+```
+
+Sample(s) with an Identifier 1 of __`r small_O$id1`__ have a mass 28 (carbon monoxide) amplitude smaller than __`r small_peaks`__ mV. Data from these samples may be unreliable.
+
+# Drift Correction {.tabset}
+
+```{r, echo = FALSE}
+data <- data %>% 
+  filter(peak_nr == oxygen_peak) %>% 
+  group_by(id2) %>% 
+  mutate(d18O_dev = d18O_measured - mean(d18O_measured)) %>% 
+  ungroup()
+```
+
+
+```{r, echo=FALSE}
+# figure out axis limits ------------------------------------------------------
+O_ylims <- data %>% 
+  filter(id2 %in% drift_material) %>% 
+  select(d18O_dev) %>% 
+  range() %>% pretty() %>% range()
+```
+
+```{r, echo = FALSE, message=FALSE}
+# oxygen pre calibration plot -------------------------------------------------
+O_drift_uncorrected <- data %>% 
+  filter(id2 %in% drift_material) %>% 
+  ggplot(mapping = aes(x = seq_nr,
+                       y = d18O_dev,
+                       color = id2)) + 
+  geom_point(size = 3) + 
+  theme(legend.position = 'top') + 
+  geom_smooth(method = oxygen_drift_model,
+              se = FALSE, 
+              color = 'black') + 
+  scale_color_manual(values = colors) + 
+  xlab('sequence number') + 
+  ylab(expression(delta^18*O[deviation])) + 
+  ggtitle('Uncorrected') + 
+  coord_cartesian(ylim = O_ylims) + 
+  guides(color=guide_legend(ncol=2))
+```
+
+```{r, message = FALSE, echo = FALSE}
+# fit a Drift Correction ------------------------------------------------------
+if(oxygen_drift) {
+  if(oxygen_drift_model == 'lm') {
+    O_drift_fit <- data %>% 
+      filter(id2 %in% drift_material) %>%
+      lm(d18O_dev ~ seq_nr, data = .)
+  } else if(oxygen_drift_model == 'loess') {
+    O_drift_fit <- data %>% 
+      filter(id2 %in% drift_material) %>%
+      loess(d18O_dev ~ seq_nr, data = .)
+  }
+  data <- data %>% 
+    mutate(d18O_measured = d18O_measured - predict(O_drift_fit, newdata = data)) %>%
+    group_by(id2) %>%
+    mutate(d18O_dev = d18O_measured - mean(d18O_measured)) %>%
+    ungroup()
+}
+```
+
+
+```{r, echo = FALSE, message=FALSE}
+if(oxygen_drift){
+  # post correction plot --------------------------------------------------------
+  O_drift_corrected <- data %>% 
+    filter(id2 %in% drift_material) %>% 
+    ggplot(mapping = aes(x = seq_nr,
+                         y = d18O_dev,
+                         color = id2)) + 
+    geom_point(size = 3) + 
+    theme(legend.position = 'top') + 
+    geom_smooth(method = 'lm',
+                se = FALSE, 
+                color = 'black') + 
+    scale_color_manual(values = colors) + 
+    xlab('sequence number') + 
+    ylab(expression(delta^18*O[deviation])) + 
+    ggtitle('Corrected') + 
+    coord_cartesian(ylim = O_ylims) + 
+    guides(color=guide_legend(ncol=2))
+}
+
+```
+
+## Oxygen Drift Correction
+Oxygen isotope compositional drift over the period of analysis was monitored using the **`r paste(drift_material, collapse = ' and ')`** reference material(s). Since a drift correction was `r ifelse(oxygen_drift,' ','not')` requested, A **`r if(oxygen_drift_model == 'lm') {paste('linear')} else if(oxygen_drift_model == 'loess') {paste('loess')}`** model was `r ifelse(oxygen_drift,' ','not')` subtracted from the raw data.
+
+```{r, echo = FALSE, message = FALSE, fig.align='center', warning = FALSE}
+if(oxygen_drift){
+  plot_grid(O_drift_uncorrected, O_drift_corrected)
+}
+```
+
+# Linearity Corrections {.tabset}
+```{r, echo = FALSE}
+O_ylims <- data %>% 
+  filter(id2 %in% linearity_material) %>% 
+  select(d18O_dev) %>% 
+  range() %>% pretty() %>% range()
+```
+
+```{r, echo = FALSE}
+# Oxygen
+# pre calibration plot --------------------------------------------------------
+O_lin_uncorrected <- data %>% 
+  filter(id2 %in% linearity_material) %>% 
+  ggplot(mapping = aes(x = area28,
+                       y = d18O_dev,
+                       color = id2)) + 
+  geom_point(size = 3) + 
+  theme(legend.position = 'top') + 
+  geom_smooth(method = 'lm',
+              se = FALSE, 
+              color = 'black') + 
+  scale_color_manual(values = colors) + 
+  xlab('mass 28 peak area (mV/s)') + 
+  ylab(expression(delta^18*O[deviation])) + 
+  ggtitle('Uncorrected') + 
+  coord_cartesian(ylim = O_ylims) + 
+  guides(color=guide_legend(ncol=2))
+```
+
+```{r, echo = FALSE, message = FALSE}
+# Oxygen
+# fit a linearity correction --------------------------------------------------
+O_lin_fit <- data %>% 
+  filter(id2 %in% linearity_material) %>% 
+  lm(formula = d18O_dev ~ area28, data = .)
+O_lin_sum <- summary(O_lin_fit)
+
+if(oxygen_linearity) {
+  data <- data %>% 
+    mutate(d18O_measured = d18O_measured - predict(O_lin_fit, newdata = data)) %>% 
+    group_by(id2) %>% 
+    mutate(d18O_dev = d18O_measured - mean(d18O_measured)) %>% 
+    ungroup()
+}
+```
+
+```{r, echo = FALSE}
+# post calibration plot -------------------------------------------------------
+O_lin_corrected <- data %>% 
+  filter(id2 %in% linearity_material) %>% 
+  ggplot(mapping = aes(x = area28,
+                       y = d18O_dev,
+                       color = id2)) + 
+  geom_point(size = 3) + 
+  theme(legend.position = 'top') + 
+  geom_smooth(method = 'lm',
+              se = FALSE, 
+              color = 'black') + 
+  scale_color_manual(values = colors) + 
+  xlab('mass 28 peak area (mV/s)') + 
+  ylab(expression(delta^18*O[deviation])) + 
+  ggtitle('Corrected') + 
+  coord_cartesian(ylim = O_ylims) + 
+  guides(color=guide_legend(ncol=2))
+
+```
+
+## Oxygen Linearity Correction
+Mass linearity of oxygen isotope compositions  was monitored using the **`r paste(linearity_material, collapse = ' and ')`** reference material(s). Since a linearity correction was `r ifelse(oxygen_linearity,' ','not')` requested, A linear trend with an $r^2$ of **`r round(O_lin_sum$r.squared, 2)`** was `r ifelse(oxygen_linearity,' ','not')` subtracted from the raw data.
+
+```{r, echo = FALSE, message = FALSE, fig.align='center'}
+if(oxygen_linearity) {
+  plot_grid(O_lin_uncorrected, O_lin_corrected)
+}
+```
+
+# Standardization {.tabset}
+
+```{r, echo = FALSE}
+# add the standards 
+data <- data %>% full_join(standards %>% filter(id2 %in% standards_used), by = 'id2')
+```
+
+```{r, echo = FALSE, message=FALSE, fig.align='center'}
+# calibration plot
+O_scale <- data %>% 
+  filter(id2 %in% standards_used) %>% 
+  ggplot(mapping = aes(x = d18O_measured,
+                       y = d18O_true,
+                       color = id2)) + 
+  geom_point(size = 3) + 
+  scale_color_manual(values = colors) +
+  geom_smooth(method = 'lm', aes(group = 1), color = 'black') + 
+  theme(legend.position = 'top') + 
+  xlab(expression(delta^18*O[measured])) + 
+  ylab(expression(delta^18*O[accepted])) + 
+  guides(color=guide_legend(ncol=2))
+
+plot_grid(O_scale)
+```
+
+```{r, echo = FALSE}
+if(drop_outliers){
+  O_std_fit <- data %>%  
+    filter(id2 %in% standards_used) %>% 
+    group_by(id2) %>% 
+    mutate(z_score = z_score(d18O_measured)) %>% 
+    filter(z_score < 2) %>% 
+    ungroup() %>% 
+    lm(formula = d18O_true ~ d18O_measured, data = .)
+  
+  data <- data %>%
+    mutate(d18O_corrected = predict(O_std_fit, newdata = data))
+  
+} else {
+  O_std_fit <- data %>%  
+    filter(id2 %in% standards_used) %>% 
+    lm(formula = d18O_true ~ d18O_measured, data = .)
+  
+  data <- data %>% 
+    mutate(d18O_corrected = predict(O_std_fit, newdata = data))
+  
+}
+
+```
+
+```{r, echo = FALSE}
+O_r2 <-O_std_fit %>% summary() %>% pluck('r.squared')
+```
+
+The isotope composition of unknowns samples were corrected to the international SMOW ($\delta^{18}O$) scale using the **`r paste(standards_used, collapse = ' and ')`** standard reference materials. Isotope compositions for standard reference materials are shown in the **Table 1**.
+
+```{r, echo = FALSE}
+standards %>% 
+  filter(id2 %in% standards_used) %>%
+  select(id2, 
+         d18O_true) %>% 
+  knitr::kable(col.names = c('standard', 
+                             '$\\delta^{18}O$'),
+               caption = 'Table 1: Certified isotope compositions for standard reference materials')
+```
+
+# Final Data {.tabset}
+
+```{r, echo = FALSE, message = FALSE}
+
+final_data <- data %>% 
+  select(Identifier_1 = id1, 
+         sample = id2, 
+         amount = weight,
+         `Area 28` = area28,
+         `Area 30`= area30,
+         d18O_corrected)
+```
+## Summary 
+```{r, echo = FALSE, message = FALSE}
+final_data %>% 
+  filter(sample %in% c(standards_used, check_material, drift_material, linearity_material)) %>% 
+  group_by(sample) %>% 
+  summarise(d18O_mean = mean(d18O_corrected),
+            d18O_sd = sd(d18O_corrected),
+            n = n()) %>% 
+  knitr::kable(digits = 2, 
+               col.names = c('sample', 
+                             '$\\delta^{18}O_{mean}$', 
+                             '$\\delta^{18}O_{sd}$', 
+                             'n'),
+               caption = 'Summary statistics for standard 
+              reference materials and in house reference materials.')
+```
+
+## Full Data Table
+```{r, echo = FALSE}
+final_data %>%
+  arrange(sample) %>%
+  mutate_if(is.numeric, round, 3) %>% 
+  knitr::kable(col.names = c('Identfier 1', 
+                             'sample',
+                             'amount (mg)', 
+                             'area 28',
+                             'area 30',
+                             '$\\delta^{18}O$'), 
+               caption = 'Corrected isotope compositions.')
+```
+
+```{r, echo = FALSE, message = FALSE}
+
+final_data %>% 
+  arrange(sample) %>% 
+  write_csv(path = paste0('~/Box Sync/Data Repository/TCEA/Corrected/',current_year,'/',file_name,'/',file_name,'_corrected.csv'))
+
+raw_data %>% 
+  write_csv(path = paste0('~/Box Sync/Data Repository/TCEA/Corrected/',current_year,'/',file_name,'/',file_name,'_raw.csv'))
+
+
+file.copy(from = 'TCEA_tidy_reduction.Rmd', 
+          to = paste0('~/Box Sync/Data Repository/TCEA/Corrected/',current_year,'/',file_name,'/',file_name,'_code.Rmd'))
+```

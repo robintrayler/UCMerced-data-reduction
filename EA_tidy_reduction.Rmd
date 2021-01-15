@@ -1,0 +1,739 @@
+---
+set_title: 'EA Report'
+author: "Robin B. Trayler"
+date: "`r format(Sys.time(), '%B, %d, %Y')`"
+output:
+  html_document:
+    toc: yes
+    toc_depth: 2
+    toc_float: yes
+    df_print: paged
+  pdf_document:
+    toc: yes
+    toc_depth: '2'
+---
+
+```{css, echo=FALSE}
+.block-format {
+  background-color: lightgrey2;
+  border: 2px solid black;
+  font-weight: bold;
+}
+
+/* Whole document: */
+  body{
+    font-family: Helvetica;
+    font-size: 12pt;
+  }
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+The $\delta^{13}C$ and $\delta^{15}N$ values and elemental carbon and nitrogen contents  of all samples were measured using a **Costech 4010** Elemental Analyzer coupled with a **Delta V Plus Continuous Flow Isotope Ratio Mass Spectrometer** housed in the Stable Isotope Facility at the University of California, Merced. 
+
+This report includes several files:
+
+1) A `.html` or `.pdf` report summarizing all data corrections and instrument reproducibility
+2) A `.csv` file with the corrected data
+3) A `.csv` file with the uncorrected data 
+4) A `.Rmd` (R Markdown) document containing the **R** code used to correct the data
+
+If you would like the original Isodat 3.0 `.dxf` files please request by sending an email to stableisotopes@ucmerced.edu
+
+
+```{r, message = FALSE, echo = FALSE}
+library(tidyverse)
+library(viridis)
+library(cowplot)
+library(lubridate)
+theme_set(theme_bw()) # set ggplot theme
+```
+
+```{r, echo = FALSE}
+z_score <- function(x) {
+  abs(x - mean(x)) / sd(x)
+}
+```
+
+```{r, echo = FALSE, message = FALSE}
+# standards <- read_csv(file = './data/EA_standards.csv')
+standards <- tribble(~id2, ~d13C_true, ~d15N_true, ~C_percent, ~N_percent,
+                     'USGS 40', -26.39, -4.52, 40.8, 9.52,
+                     'USGS 41a', 36.55, 47.55, 40.8, 9.52,
+                     'costech acetanilide', NA, NA, 71.09, 10.36) 
+
+colors <- viridis(n = length(standards$id2) + 1, end = 0.8, option = 'D')
+names(colors) <- c(standards$id2, TRUE)
+```
+
+# Setup {.tabset}
+## File Path
+```{r}
+# file path to the isodat csv file 
+file_path <- '~/Box Sync/Data Repository/EA/EA20210107.csv'
+```
+
+## Analysis Parameters
+### Select Sample Peaks
+```{r}
+# Which peak is the N2 analyte?
+nitrogen_peak <- 3
+# Which peak is the CO2 analyte?
+carbon_peak <- 4
+# How many total peaks should there be?
+total_peaks <- 6
+```
+
+### Set Rejection Criteria
+```{r}
+# rejection criteria
+small_peaks <- 500 # warn about peaks smaller with an amplitude smaller than this
+# should 2 sigma outlier standards be dropped from isotope corrections
+drop_outliers <- FALSE 
+```
+
+### Select Correction Standards
+```{r}
+# standards used in run
+standards_used = c('USGS 41a', 'USGS 40')
+# material to use for linearity corrections
+linearity_material = c('USGS 40')
+# material to use for drift corrections
+drift_material = c('USGS 41a', 'costech acetanilide')
+# material to use for weight calculations
+weight_percent_material = c('USGS 40', 'USGS 41a', 'costech acetanilide')
+# in house 'check' materials for run quality
+check_material = c('EA sed', 'MB squid', 'peach', 'costech acetanilide', 'EA gelatin', 'Mb squid')
+```
+
+## Drift and Linearity Model Specification
+### Instrument Drift
+```{r}
+# should a drift correction be applied to nitrogen
+nitrogen_drift <- TRUE
+# model choices are either 'lm' for linear or 'loess' for loess
+nitrogen_drift_model <- 'lm'
+
+# should a drift correction be applied to carbon
+carbon_drift <- TRUE
+# model choices are either 'lm' for linear or 'loess' for loess
+carbon_drift_model <- 'lm'
+```
+
+### Mass Linearity
+```{r}
+# should a linearity correction be applied?
+# mass linearity corrections use a linear model
+nitrogen_linearity <- TRUE
+carbon_linearity <- TRUE
+```
+
+```{r, echo = FALSE}
+# set the document file name to the name of the data file read in
+file_name = tools::file_path_sans_ext(basename(file_path))
+```
+---
+title: "`r paste(file_name,' Report')`"
+---
+
+# Data Screening {.tabset}
+```{r, message = FALSE, echo = FALSE}
+# read data
+raw_data <- read_csv(file = file_path)
+
+data <- raw_data %>% 
+  select(date = Date,
+         time = Time,
+         seq_nr = Row,
+         id1 = `Identifier 1`, 
+         id2 = `Identifier 2`,
+         peak_nr = `Peak Nr.`,
+         weight = Amount,
+         area28 = `Area 28`,
+         amp28 = `Ampl. 28`,
+         amp44 = `Ampl. 44`,
+         area44 = `Area 44`,
+         d13C_measured = `d 13C/12C`,
+         d15N_measured = `d 15N/14N`) %>% 
+  mutate(date_time = mdy(date) + hms(time))
+```
+
+```{r, echo = FALSE}
+# separate out the carbon data ------------------------------------------------
+carbon <- data %>% 
+  filter(peak_nr == carbon_peak) %>% 
+  full_join(standards, by = 'id2') %>% 
+  group_by(id2) %>% 
+  mutate(d13C_dev = d13C_measured - mean(d13C_measured)) %>% 
+  ungroup() %>% 
+  mutate(weight_carbon = weight * C_percent / 100)
+```
+
+```{r, echo = FALSE}
+# separate out the nitrogen data ----------------------------------------------
+nitrogen <- data %>% 
+  filter(peak_nr == nitrogen_peak) %>% 
+  full_join(standards, by = 'id2') %>% 
+  group_by(id2) %>% 
+  mutate(d15N_dev = d15N_measured - mean(d15N_measured)) %>% 
+  ungroup() %>% 
+  mutate(weight_nitrogen = weight * N_percent / 100)
+```
+
+## Check for Missing Peaks
+```{r, echo = FALSE, message = FALSE}
+# check for missing peaks
+missing <- data %>% 
+  group_by(id1) %>% 
+  summarize(n = !(n() == total_peaks))
+```
+Sample(s) with an Identifier 1 of __`r missing$id1[missing$n]`__ have fewer peaks than expected. Please check the raw data.
+
+## Check for Small Peaks
+```{r, echo = FALSE}
+small_N <- data %>% 
+  filter(peak_nr %in% nitrogen_peak & amp28 < small_peaks) %>% 
+  select(id1)
+
+small_C <- data %>% 
+  filter(peak_nr %in% carbon_peak & amp44 < small_peaks) %>% 
+  select(id1)
+```
+
+Sample(s) with an Identifier 1 of __`r small_N$id1`__ have a mass 28 (nitrogen) amplitude smaller than __`r small_peaks`__ mV. Data from these samples may be unreliable.
+
+Sample(s) with an Identifier 1 of __`r small_C$id1`__ have a mass 44 (carbon) amplitude smaller than __`r small_peaks`__ mV. Data from these samples may be unreliable.
+
+# Drift Correction {.tabset}
+```{r, echo=FALSE}
+# figure out axis limits ------------------------------------------------------
+C_ylims <- carbon %>% 
+  filter(id2 %in% drift_material) %>% 
+  select(d13C_dev) %>% 
+  range() %>% pretty() %>% range()
+
+N_ylims <- nitrogen %>% 
+  filter(id2 %in% drift_material) %>% 
+  select(d15N_dev) %>% 
+  range() %>% pretty() %>% range()
+```
+
+```{r, echo = FALSE, message=FALSE}
+# carbon pre calibration plot -------------------------------------------------
+C_drift_uncorrected <- carbon %>% 
+  filter(id2 %in% drift_material) %>% 
+  ggplot(mapping = aes(x = seq_nr,
+                       y = d13C_dev,
+                       color = id2)) + 
+  geom_point(size = 3) + 
+  theme(legend.position = 'top') + 
+  geom_smooth(method = carbon_drift_model,
+              se = FALSE, 
+              color = 'black') + 
+  scale_color_manual(values = colors) + 
+  xlab('sequence number') + 
+  ylab(expression(delta^13*C[deviation])) + 
+  ggtitle('Uncorrected') + 
+  coord_cartesian(ylim = C_ylims) + 
+  guides(color=guide_legend(ncol=2))
+```
+
+```{r, echo = FALSE, message=FALSE}
+# pre calibration plot --------------------------------------------------------
+N_drift_uncorrected <- nitrogen %>% 
+  filter(id2 %in% drift_material) %>% 
+  ggplot(mapping = aes(x = seq_nr,
+                       y = d15N_dev,
+                       color = id2)) + 
+  geom_point(size = 3) + 
+  theme(legend.position = 'top') + 
+  geom_smooth(method = nitrogen_drift_model,
+              se = FALSE, 
+              color = 'black') + 
+  scale_color_manual(values = colors) + 
+  xlab('sequence number') + 
+  ylab(expression(delta^15*N[deviation])) + 
+  ggtitle('Uncorrected') + 
+  coord_cartesian(ylim = N_ylims) + 
+  guides(color=guide_legend(ncol=2))
+```
+
+
+```{r, message = FALSE, echo = FALSE}
+# fit a Drift Correction ------------------------------------------------------
+if(carbon_drift) {
+  if(carbon_drift_model == 'lm') {
+    C_drift_fit <- carbon %>% 
+      filter(id2 %in% drift_material) %>%
+      lm(d13C_dev ~ seq_nr, data = .)
+  } else if(carbon_drift_model == 'loess') {
+    C_drift_fit <- carbon %>% 
+      filter(id2 %in% drift_material) %>%
+      loess(d13C_dev ~ seq_nr, data = .)
+  }
+  carbon <- carbon %>% 
+    mutate(d13C_measured = d13C_measured - predict(C_drift_fit, newdata = carbon)) %>%
+    group_by(id2) %>%
+    mutate(d13C_dev = d13C_measured - mean(d13C_measured)) %>%
+    ungroup()
+}
+```
+
+```{r, message = FALSE, echo = FALSE}
+# fit a Drift Correction ------------------------------------------------------
+if(nitrogen_drift) {
+  if(nitrogen_drift_model == 'lm') {
+    N_drift_fit <- nitrogen %>% 
+      filter(id2 %in% drift_material) %>%
+      lm(d15N_dev ~ seq_nr, data = .)
+  } else if(nitrogen_drift_model == 'loess') {
+    N_drift_fit <- nitrogen %>% 
+      filter(id2 %in% drift_material) %>%
+      loess(d15N_dev ~ seq_nr, data = .)
+  }
+  
+  nitrogen <- nitrogen %>% 
+    mutate(d15N_measured = d15N_measured - predict(N_drift_fit, newdata = nitrogen)) %>%
+    group_by(id2) %>%
+    mutate(d15N_dev = d15N_measured - mean(d15N_measured)) %>%
+    ungroup()
+}
+```
+
+```{r, echo = FALSE, message=FALSE}
+if(carbon_drift){
+  # post correction plot --------------------------------------------------------
+  C_drift_corrected <- carbon %>% 
+    filter(id2 %in% drift_material) %>% 
+    ggplot(mapping = aes(x = seq_nr,
+                         y = d13C_dev,
+                         color = id2)) + 
+    geom_point(size = 3) + 
+    theme(legend.position = 'top') + 
+    geom_smooth(method = 'lm',
+                se = FALSE, 
+                color = 'black') + 
+    scale_color_manual(values = colors) + 
+    xlab('sequence number') + 
+    ylab(expression(delta^13*C[deviation])) + 
+    ggtitle('Corrected') + 
+    coord_cartesian(ylim = C_ylims) + 
+    guides(color=guide_legend(ncol=2))
+}
+
+if(nitrogen_drift){
+  # post correction plot --------------------------------------------------------
+  N_drift_corrected <- nitrogen %>% 
+    filter(id2 %in% drift_material) %>% 
+    ggplot(mapping = aes(x = seq_nr,
+                         y = d15N_dev,
+                         color = id2)) + 
+    geom_point(size = 3) + 
+    theme(legend.position = 'top') + 
+    geom_smooth(method = 'lm',
+                se = FALSE, 
+                color = 'black') + 
+    scale_color_manual(values = colors) + 
+    xlab('sequence number') + 
+    ylab(expression(delta^15*N[deviation])) + 
+    ggtitle('Corrected') + 
+    coord_cartesian(ylim = N_ylims) + 
+    guides(color=guide_legend(ncol=2))
+}
+```
+
+## Nitrogen Drift Correction
+Nitrogen isotope compositional drift over the period of analysis was monitored using the **`r paste(drift_material, collapse = ' and ')`** reference material(s). Since a drift correction was `r ifelse(carbon_drift,' ','not')` requested, A **`r if(nitrogen_drift_model == 'lm') {paste('linear')} else if(nitrogen_drift_model == 'loess') {paste('loess')}`** model was `r ifelse(nitrogen_drift,' ','not')` subtracted from the raw data.
+
+```{r, echo = FALSE, message = FALSE, fig.align='center', warning = FALSE}
+if(nitrogen_drift){
+  plot_grid(N_drift_uncorrected, N_drift_corrected)
+}
+```
+
+
+## Carbon Drift Correction
+Carbon isotope compositional drift over the period of analysis was monitored using the **`r paste(drift_material, collapse = ' and ')`** reference material(s). Since a drift correction was `r ifelse(carbon_drift,' ','not')` requested, A **`r if(carbon_drift_model == 'lm') {paste('linear')} else if(carbon_drift_model == 'loess') {paste('loess')}`** model was `r ifelse(carbon_drift,' ','not')` subtracted from the raw data.
+
+```{r, echo = FALSE, message = FALSE, fig.align='center', warning = FALSE}
+if(carbon_drift){
+  plot_grid(C_drift_uncorrected, C_drift_corrected)
+}
+```
+
+# Linearity Corrections {.tabset}
+```{r, echo = FALSE}
+N_ylims <- nitrogen %>% 
+  filter(id2 %in% linearity_material) %>% 
+  select(d15N_dev) %>% 
+  range() %>% pretty() %>% range()
+
+C_ylims <- carbon %>% 
+  filter(id2 %in% linearity_material) %>% 
+  select(d13C_dev) %>% 
+  range() %>% pretty() %>% range()
+```
+
+```{r, echo = FALSE}
+# Carbon
+# pre calibration plot --------------------------------------------------------
+C_lin_uncorrected <- carbon %>% 
+  filter(id2 %in% linearity_material) %>% 
+  ggplot(mapping = aes(x = area44,
+                       y = d13C_dev,
+                       color = id2)) + 
+  geom_point(size = 3) + 
+  theme(legend.position = 'top') + 
+  geom_smooth(method = 'lm',
+              se = FALSE, 
+              color = 'black') + 
+  scale_color_manual(values = colors) + 
+  xlab('mass 44 peak area (mV/s)') + 
+  ylab(expression(delta^13*C[deviation])) + 
+  ggtitle('Uncorrected') + 
+  coord_cartesian(ylim = C_ylims) + 
+  guides(color=guide_legend(ncol=2))
+
+# Nitrogen
+# pre calibration plot --------------------------------------------------------
+N_lin_uncorrected <- nitrogen %>% 
+  filter(id2 %in% linearity_material) %>% 
+  ggplot(mapping = aes(x = area28,
+                       y = d15N_dev,
+                       color = id2)) + 
+  geom_point(size = 3) + 
+  theme(legend.position = 'top') + 
+  geom_smooth(method = 'lm',
+              se = FALSE, 
+              color = 'black') + 
+  scale_color_manual(values = colors) + 
+  xlab('mass 28 peak area (mV/s)') + 
+  ylab(expression(delta^15*N[deviation])) + 
+  ggtitle('Uncorrected') + 
+  coord_cartesian(ylim = N_ylims) + 
+  guides(color=guide_legend(ncol=2))
+```
+
+```{r, echo = FALSE, message = FALSE}
+# Carbon
+# fit a linearity correction --------------------------------------------------
+C_lin_fit <- carbon %>% 
+  filter(id2 %in% linearity_material) %>% 
+  lm(formula = d13C_dev ~ area44, data = .)
+C_lin_sum <- summary(C_lin_fit)
+
+if(carbon_linearity) {
+  carbon <- carbon %>% 
+    mutate(d13C_measured = d13C_measured - predict(C_lin_fit, newdata = carbon)) %>% 
+    group_by(id2) %>% 
+    mutate(d13C_dev = d13C_measured - mean(d13C_measured)) %>% 
+    ungroup()
+}
+
+# Nitrogen
+# fit a linearity correction --------------------------------------------------
+N_lin_fit <- nitrogen %>% 
+  filter(id2 %in% linearity_material) %>% 
+  lm(formula = d15N_dev ~ area28, data = .)
+N_lin_sum <- summary(N_lin_fit)
+
+if(nitrogen_linearity){
+  nitrogen <- nitrogen %>% 
+    mutate(d15N_measured = d15N_measured - predict(N_lin_fit, newdata = nitrogen)) %>% 
+    group_by(id2) %>% 
+    mutate(d15N_dev = d15N_measured - mean(d15N_measured)) %>% 
+    ungroup()
+}
+```
+
+```{r, echo = FALSE}
+# post calibration plot -------------------------------------------------------
+C_lin_corrected <- carbon %>% 
+  filter(id2 %in% linearity_material) %>% 
+  ggplot(mapping = aes(x = area44,
+                       y = d13C_dev,
+                       color = id2)) + 
+  geom_point(size = 3) + 
+  theme(legend.position = 'top') + 
+  geom_smooth(method = 'lm',
+              se = FALSE, 
+              color = 'black') + 
+  scale_color_manual(values = colors) + 
+  xlab('mass 44 peak area (mV/s)') + 
+  ylab(expression(delta^13*C[deviation])) + 
+  ggtitle('Corrected') + 
+  coord_cartesian(ylim = C_ylims) + 
+  guides(color=guide_legend(ncol=2))
+
+N_lin_corrected <- nitrogen %>% 
+  filter(id2 %in% linearity_material) %>% 
+  ggplot(mapping = aes(x = area28,
+                       y = d15N_dev,
+                       color = id2)) + 
+  geom_point(size = 3) + 
+  theme(legend.position = 'top') + 
+  geom_smooth(method = 'lm',
+              se = FALSE, 
+              color = 'black') + 
+  scale_color_manual(values = colors) + 
+  xlab('mass 28 peak area (mV/s)') + 
+  ylab(expression(delta^15*N[deviation])) + 
+  ggtitle('Corrected') + 
+  coord_cartesian(ylim = N_ylims) + 
+  guides(color=guide_legend(ncol=2))
+```
+
+## Nitrogen Linearity Correction
+Mass linearity of nitrogen isotope compositions  was monitored using the **`r paste(linearity_material, collapse = ' and ')`** reference material(s). Since a linearity correction was `r ifelse(nitrogen_linearity,' ','not')` requested, A linear trend with an $r^2$ of **`r round(N_lin_sum$r.squared, 2)`** was `r ifelse(nitrogen_linearity,' ','not')` subtracted from the raw data.
+
+```{r, echo = FALSE, message = FALSE, fig.align='center'}
+if(nitrogen_linearity) {
+  plot_grid(N_lin_uncorrected, N_lin_corrected)
+}
+```
+
+## Carbon Linearity Correction
+Mass linearity of carbon isotope compositions  was monitored using the **`r paste(linearity_material, collapse = ' and ')`** reference material(s). Since a linearity correction was `r ifelse(carbon_linearity,' ','not')` requested, A linear trend with an $r^2$ of **`r round(C_lin_sum$r.squared, 2)`** was `r ifelse(carbon_linearity,' ','not')` subtracted from the raw data.
+
+```{r, echo = FALSE, message = FALSE, fig.align='center'}
+if(carbon_linearity) {
+  plot_grid(C_lin_uncorrected, C_lin_corrected)
+}
+```
+
+# Standardization {.tabset}
+```{r, echo = FALSE, message=FALSE, fig.align='center'}
+# calibration plot
+C_scale <- carbon %>% 
+  filter(id2 %in% standards_used) %>% 
+  ggplot(mapping = aes(x = d13C_measured,
+                       y = d13C_true,
+                       color = id2)) + 
+  geom_point(size = 3) + 
+  scale_color_manual(values = colors) +
+  geom_smooth(method = 'lm', aes(group = 1), color = 'black') + 
+  theme(legend.position = 'top') + 
+  xlab(expression(delta^13*C[measured])) + 
+  ylab(expression(delta^13*C[accepted])) + 
+  guides(color=guide_legend(ncol=2))
+
+N_scale <- nitrogen %>% 
+  filter(id2 %in% standards_used) %>% 
+  ggplot(mapping = aes(x = d15N_measured,
+                       y = d15N_true,
+                       color = id2)) + 
+  geom_point(size = 3) + 
+  scale_color_manual(values = colors) +
+  geom_smooth(method = 'lm', aes(group = 1), color = 'black') + 
+  theme(legend.position = 'top') + 
+  xlab(expression(delta^15*N[measured])) + 
+  ylab(expression(delta^15*N[accepted])) + 
+  guides(color=guide_legend(ncol=2))
+
+plot_grid(N_scale, C_scale)
+```
+
+```{r, echo = FALSE}
+if(drop_outliers){
+  C_std_fit <- carbon %>%  
+    filter(id2 %in% standards_used) %>% 
+    group_by(id2) %>% 
+    mutate(z_score = z_score(d13C_measured)) %>% 
+    filter(z_score < 2) %>% 
+    ungroup() %>% 
+    lm(formula = d13C_true ~ d13C_measured, data = .)
+  
+  N_std_fit <- nitrogen %>%  
+    filter(id2 %in% standards_used) %>% 
+    group_by(id2) %>% 
+    mutate(z_score = z_score(d15N_measured)) %>% 
+    filter(z_score < 2) %>% 
+    ungroup() %>% 
+    lm(formula = d15N_true ~ d15N_measured, data = .)
+  carbon <- carbon %>% 
+    mutate(d13C_corrected = predict(C_std_fit, newdata = carbon))
+  nitrogen <- nitrogen %>% 
+    mutate(d15N_corrected = predict(N_std_fit, newdata = nitrogen))
+  
+} else {
+  C_std_fit <- carbon %>%  
+    filter(id2 %in% standards_used) %>% 
+    lm(formula = d13C_true ~ d13C_measured, data = .)
+  N_std_fit <- nitrogen %>%  
+    filter(id2 %in% standards_used) %>% 
+    lm(formula = d15N_true ~ d15N_measured, data = .) 
+  carbon <- carbon %>% 
+    mutate(d13C_corrected = predict(C_std_fit, newdata = carbon))
+  nitrogen <- nitrogen %>% 
+    mutate(d15N_corrected = predict(N_std_fit, newdata = nitrogen))
+}
+
+```
+
+```{r, echo = FALSE}
+N_r2 <- N_std_fit %>% summary() %>% pluck('r.squared')
+
+C_r2 <- C_std_fit %>% summary() %>% pluck('r.squared')
+```
+
+The isotope composition of unknowns samples were corrected to the international PDB ($\delta^{13}C$) and Air ($\delta^{15}N$) scales using the **`r paste(standards_used, collapse = ' and ')`** standard reference materials. Isotope compositions for standard reference materials are shown in the **Table 1**.
+
+```{r, echo = FALSE}
+standards %>% 
+  filter(id2 %in% standards_used) %>%
+  select(id2, 
+         d13C_true, 
+         d15N_true) %>% 
+  knitr::kable(col.names = c('standard', 
+                             '$\\delta^{13}C$', 
+                             '$\\delta^{15}N$'),
+               caption = 'Table 1: Certified isotope compositions for standard reference materials')
+```
+
+# Elemental Content {.tabset}
+```{r echo=FALSE, fig.align='center', message=FALSE}
+C_weight <- carbon %>% 
+  filter(id2 %in% weight_percent_material) %>% 
+  ggplot(mapping = aes(x = area44, 
+                       y = weight_carbon,
+                       color = id2)) + 
+  geom_point(size = 3) + 
+  scale_color_manual(values = colors) + 
+  theme(legend.position = 'top') + 
+  geom_smooth(aes(group = 1), color = 'black', method = 'lm') + 
+  xlab('mass 44 peak area (mV/s)') + 
+  ylab('carbon content (mg)') + 
+  guides(color=guide_legend(ncol=2))
+
+N_weight <- nitrogen %>% 
+  filter(id2 %in% weight_percent_material) %>% 
+  ggplot(mapping = aes(x = area28, 
+                       y = weight_nitrogen,
+                       color = id2)) + 
+  geom_point(size = 3) + 
+  scale_color_manual(values = colors) + 
+  theme(legend.position = 'top') + 
+  geom_smooth(aes(group = 1), color = 'black', method = 'lm') + 
+  xlab('mass 28 peak area (mV/s)') + 
+  ylab('nitrogen content (mg)') + 
+  guides(color=guide_legend(ncol=2))
+
+plot_grid(N_weight, C_weight)
+```
+
+```{r, echo = FALSE}
+C_wt_fit <- carbon %>% 
+  filter(id2 %in% weight_percent_material) %>% 
+  lm(formula = weight_carbon ~ area44, data = .)
+carbon <- carbon %>% 
+  mutate(C_wt_percent = predict(C_wt_fit, newdata = carbon) / weight * 100)
+
+N_wt_fit <- nitrogen %>% 
+  filter(id2 %in% weight_percent_material) %>% 
+  lm(formula = weight_nitrogen ~ area28, data = .)
+nitrogen <- nitrogen %>% 
+  mutate(N_wt_percent = predict(N_wt_fit, newdata = nitrogen) / weight * 100)
+```
+Total carbon and nitrogen contents were calculated using the **`r paste(weight_percent_material, collapse = ' and ')`** reference materials. Certified carbon and nitrogen contents for these reference materials are shown in the **Table 2**. 
+
+```{r, echo = FALSE}
+standards %>% 
+  filter(id2 %in% weight_percent_material) %>%
+  select(id2, 
+         C_percent, 
+         N_percent) %>% 
+  knitr::kable(col.names = c('standard', 
+                             '$C \\%$', 
+                             '$N \\%$'),
+               caption = 'Table 2: Certified elemental contents for standard reference materials')
+```
+
+# Final Data {.tabset}
+## Summary 
+
+```{r, echo = FALSE, message = FALSE}
+carbon <- carbon %>% 
+  select(
+    id1, 
+    id2, 
+    weight,
+    area44, 
+    d13C_corrected,
+    C_wt_percent)
+
+nitrogen <- nitrogen %>% 
+  select(
+    id1, 
+    id2, 
+    weight,
+    area28, 
+    d15N_corrected,
+    N_wt_percent)
+
+final_data <- full_join(carbon, nitrogen) %>% 
+  select(Identifier_1 = id1, 
+         sample = id2, 
+         amount = weight,
+         `Area 28` = area28,
+         `Area 44`= area44,
+         d13C_corrected,
+         d15N_corrected,
+         N_wt_percent,
+         C_wt_percent) %>% 
+  mutate(`C/N` = C_wt_percent/N_wt_percent)
+```
+
+```{r, echo = FALSE, message = FALSE}
+final_data %>% 
+  filter(sample %in% c(standards_used, check_material, drift_material, linearity_material)) %>% 
+  group_by(sample) %>% 
+  summarise(d15N_mean = mean(d15N_corrected),
+            d15N_sd = sd(d15N_corrected),
+            d13C_mean = mean(d13C_corrected),
+            d13C_sd = sd(d13C_corrected),
+            N_wt_percent_mean = mean(N_wt_percent),
+            N_wt_percent_sd = sd(N_wt_percent),
+            C_wt_percent_mean = mean(C_wt_percent),
+            C_wt_percent_sd = sd(C_wt_percent),
+            n = n()) %>% 
+  knitr::kable(digits = 2, 
+               col.names = c('sample', 
+                             '$\\delta^{15}N_{mean}$', 
+                             '$\\delta^{15}N_{sd}$', 
+                             '$\\delta^{13}C_{mean}$', 
+                             '$\\delta^{13}C_{sd}$', 
+                             '$N \\%_{mean}$',
+                             '$N \\%_{sd}$',
+                             '$C \\%_{mean}$',
+                             '$C \\%_{sd}$',
+                             'n'),
+               caption = 'Summary statistics for standard 
+              reference materials and in house reference materials.')
+```
+
+## Full Data Table
+```{r, echo = FALSE}
+final_data %>%
+  arrange(sample) %>%
+  mutate_if(is.numeric, round, 3) %>% 
+  knitr::kable(col.names = c('Identifier 1', 
+                             'sample',
+                             'amount (mg)', 
+                             'area 28',
+                             'area 44',
+                             '$\\delta^{13}C$',
+                             '$\\delta^{15}N$',
+                             '$N \\%$',
+                             '$C \\%$', 
+                             '$C \\ /N$'),
+               caption = 'Corrected isotope compositions, 
+               total carbon and nitrogen content, and C/N ratios. C/N ratios are reported as wt/wt.')
+```
+
+```{r, echo = FALSE, message = FALSE}
+final_data %>% arrange(sample) %>% write_csv(path = paste0('./EA_results/', file_name,'_corrected.csv'))
+raw_data %>% write_csv(path = paste0('./EA_results/', file_name, '_raw.csv'))
+file.copy(from = 'EA_tidy_reduction.Rmd', to = paste0('./EA_results/', file_name,'_code.Rmd'))
+```
