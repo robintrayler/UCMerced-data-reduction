@@ -1,1 +1,2 @@
 # Introduction
+This repository contains R code used to correct data generated in the Stable Isotope Ecosystems Laboratory of UC Merced. The `.Rmd` files are tailored to the specific isodat export `.csv` files used by SIELO, but they could be modified to work with other files. 
