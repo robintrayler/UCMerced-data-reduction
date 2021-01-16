@@ -1,0 +1,8 @@
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+GB_results/.DS_Store
+EA_results/.DS_Store
+*.pdf
+.DS_Store

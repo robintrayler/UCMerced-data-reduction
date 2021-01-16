@@ -1,0 +1,247 @@
+---
+set_title: 'Report'
+author: "Robin B. Trayler"
+date: "`r format(Sys.time(), '%B, %d, %Y')`"
+output:
+  pdf_document: default
+  word_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(plotly)
+library(magrittr)
+```
+The $\delta^{18}O$ values of all samples were measured using a __Thermo Scientific Thermal Conversion Elemental Analyzer__ coupled with a __Delta V Plus Continuous Flow Isotope Ratio Mass Spectrometer__ housed in the Stable Isotope Facility at the University of California, Merced. If you would like the original Isodat 3.0 output file please request by sending an email to StableIsotopes@ucmerced.edu
+
+# Run Parameters
+```{r define_parameters, echo = TRUE}
+file_path = "~/Box Sync/Data Repository/TCEA/TCEA20200814.csv" # location of raw data file
+oxygen_peak = 4 # which peak is oxygen
+total_peaks = 1 # total number of peaks
+linearity_standard = "USGS 80"
+standards_used = c("USGS 80", "USGS 81") # standards used in run
+reference_material = c('IAEA 601', 'EA Ag3PO4', 'alfa asar') # material used for reference
+linearity_correction = FALSE # should a linearity correction be performed
+drift_correction = TRUE
+drift_standard = c("USGS 80")
+linearity_standard = "USGS 80" # standard used for linearity correction
+```
+
+```{r, echo = FALSE}
+file_name = tools::file_path_sans_ext(basename(file_path))
+```
+---
+title: "`r paste(file_name,' Report')`"
+---
+
+
+```{r, echo = FALSE}
+# define values for standards
+standards = tibble(sample = c('USGS 80', 'USGS 81', 'IAEA 601', 'CBS', 'KHS', 'EA Ag3PO4'),
+                   d18O_true = c(+13.1, +35.4, +23.3, +3.8, +20.3, +21.7))
+```
+
+```{r load_data, echo=FALSE, message=FALSE, warning=FALSE}
+# Load data
+data = read_csv(file = file_path)
+# filter out the useful columns
+data %<>% select(Identifier_1 = `Identifier 1`,
+                 sample = `Identifier 2`,
+                 wt_percent = `Amt%`,
+                 amount = Amount,
+                 `Area 28` = `Area 28`,
+                 d18O_measured = `d 18O/16O`,
+                 `Peak Nr` = `Peak Nr.`,
+                 row = Row,
+                 `BGD 28`)
+
+
+```
+
+# Check For Bad Samples
+```{r check_data, echo = FALSE}
+# Check for missing peaks
+ID = unique(data[['Identifier_1']])
+
+bad_peaks = rep(FALSE, length = length(ID))
+for(i in 1:length(ID)) {
+  if (data %>% filter(Identifier_1 == ID[i]) %>% select(`Peak Nr`) %>% nrow() < total_peaks) {
+    bad_peaks[i] = TRUE
+  }
+}
+
+```
+Sample(s) with an Identifier 1 of __`r ID[bad_peaks]`__ have fewer peaks than expected. Please check the raw data. 
+
+```{r, echo=FALSE}
+# filter and select
+#Filter out the nitrogen and carbon data seperately. This is based on peak number which can cause problems if there are  #missing peaks. It might be better to filter on retention time so the code will only grab peaks within the correct time #window.
+data %<>% 
+  filter(`Peak Nr` == oxygen_peak) %>% 
+  select(Identifier_1, 
+         sample,
+         amount,
+         `Area 28`,
+         d18O_measured,
+         `Peak Nr`,
+         row,
+         `BGD 28`)
+```
+
+
+```{r O_linearity, include=FALSE}
+if (linearity_correction == TRUE) {
+  # correct for linearity in nitrogen --------------------------------------------------
+  # find samples with 'lin' prefix
+  O_linearity <- data %>% filter(str_detect(sample, linearity_standard))
+  # calculate coefficients
+  O_coeff = O_linearity %>% lm(d18O_measured ~ `Area 28`, data = .) %>% coef()
+  # calculate R squared
+  O_summary = O_linearity %>% lm(d18O_measured ~ `Area 28`, data = .) %>% summary()
+  # perform linearity correction
+  data %<>% mutate(d18O_measured = d18O_measured - 
+                     O_coeff[1] + `Area 28` * O_coeff[2] -
+                     as.numeric(standards %>% 
+                                  filter(sample == linearity_standard) %>% 
+                                  select(d18O_true)))
+}
+```
+
+# Drift correction
+```{r drift, echo = FALSE, fig.height=4, fig.width=5, fig.align='center', warning=FALSE}
+drift_coef <- c(NA,NA)
+drift_R <- NA
+drift_R$r.squared <- NA
+if (drift_correction) {
+  drift_data <- data %>% filter(str_detect(sample, drift_standard))
+  # get the linear regresson
+  drift_R <- data %>% 
+    filter(str_detect(sample, drift_standard)) %>% 
+    lm(d18O_measured ~ row, data = .) %>% summary()
+  drift_coef <- data %>% 
+    filter(str_detect(sample, drift_standard)) %>% 
+    lm(d18O_measured ~ row, data = .) %>% 
+    coef()
+  # plot the un-drift corrected data
+  drift_data %>% with(plot(x = row, 
+                           y = d18O_measured,
+                           xlab = 'row',
+                           ylab = expression(delta^{18}~'O'),
+                           pch = 21,
+                           cex = 1.5,
+                           bg = 'tomato',
+                           tcl = 0.25))
+  grid()
+  abline(a = drift_coef[1],
+         b = drift_coef[2], lwd = 2,
+         col = 'tomato')
+  
+  # calculate the mean value of the standard used
+  accepted_value <- data %>% 
+    filter(str_detect(sample, drift_standard)) %>% 
+    with(mean(d18O_measured, na.rm = T))
+  # correct the data
+  data %<>% mutate(d18O_measured = d18O_measured - (drift_coef[1] + row * drift_coef[2] - accepted_value))
+  new_coef <- data %>% filter(str_detect(sample, drift_standard)) %>% lm(d18O_measured ~ row, data = .)
+  
+  data %>% filter(str_detect(sample, drift_standard)) %>% with(points(x = row,
+                                                                      y = d18O_measured,
+                                                                      pch = 21,
+                                                                      bg = 'steelblue',
+                                                                      cex = 1))
+  abline(new_coef, lwd = 1, lty = 2, col = 'steelblue')
+  legend('bottomright',
+         legend = c('raw data', 'linear trend removed'),
+         pch = 21,
+         pt.bg = c('tomato','steelblue'))
+}
+```
+
+$\delta^{18}O$ values were corrected for isotopic drift through the course of analysis by monitoring the __`r drift_standard`__ reference material. A linear trend with a slope of __`r drift_coef[2]`__, and intercept of __`r drift_coef[1]`__, and and $r^2$ of __`r drift_R$r.squared`__  was subtracted from the data. 
+
+# Standard correction
+The oxygen isotope composition ($\delta^{18}O$)  of unknowns samples were corrected to the international SMOW  scales using the __`r paste(standards_used, collapse = ' and ')`__ standard reference materials. An in house reference material, __`r paste(reference_material)`__ which was also monitored to track the analytical reproducibility of isotope compositions. Isotope compositions for standard reference materials are shown in the table 1. 
+
+```{r echo=FALSE}
+# fit a line to the nitrogen data
+O_fit = data %>% 
+  filter(sample %in% standards_used) %>% 
+  left_join(standards, by = 'sample') %>% 
+  lm(d18O_true ~ d18O_measured , data = .) 
+
+# display a table with the acceted values for the standards
+knitr::kable(standards %>% filter(sample %in% standards_used),
+             col.names = c('Standard', '$\\delta^{18}O$'),
+             caption = 'Accepted values for isotope standard reference materials')
+
+```
+
+```{r oxygen_fit, echo=FALSE, fig.align='center', fig.height=4, fig.width=5}
+# plot the results for carbon
+data %>% 
+  filter(sample %in% standards_used) %>% 
+  left_join(standards, by = 'sample') %>% 
+  with(plot(x = d18O_measured, 
+            y = d18O_true, 
+            pch = 21, 
+            bg = 'tomato', 
+            cex = 1.5,
+            xlab = expression(delta^{18}~'O'['measured']),
+            ylab = expression(delta^{18}~'O'['accepted']),
+            main = expression(delta^{18}~'O standard calibration'),
+            tcl = 0.25))
+grid()
+abline(v = 0)
+abline(h = 0)
+# add the calibration curve
+abline(O_fit, lwd = 2)
+```
+A linear regression of the measured and accepted $\delta^{18}O$ values for the __`r paste(standards_used, collapse = ' and ')`__ standard reference materials returned a slope of __`r round(as.numeric(O_fit$coefficients[2]),3)`__ and an intercept of __`r round(as.numeric(O_fit$coefficients[1]),3)`__. with an $r^2$ of __`r summary(O_fit)$r.squared`__
+
+```{r echo=FALSE}
+### Correct the data using the linear regression results
+
+O_fit %<>% coefficients()
+data %<>% mutate(d18O_corrected = O_fit[1] + O_fit[2] * d18O_measured)
+```
+
+# Standard Summary
+Summary statistics for the __`r paste(standards_used, collapse = ' and ')`__ standard reference materials and the __`r paste(reference_material, collapse = ' and ')`__ in house reference are shown in the table 2. 
+```{r echo=FALSE}
+data %>% 
+  filter(sample %in% c(standards_used, 
+                       reference_material)) %>% 
+  group_by(sample) %>% 
+  summarise(d18O_mean = mean(d18O_corrected),
+            d18O_sd = sd(d18O_corrected)) %>% 
+  knitr::kable(digits = 2, 
+               col.names = c('sample', 
+                             '$\\delta^{18}O_{mean}$', 
+                             '$\\delta^{18}O_{sd}$'),
+               caption = 'Summary statistics for standard 
+              reference materials and in house reference materials.')
+```
+
+# Final Data Table
+```{r echo = FALSE}
+# render a table of the final data
+final_data <- data %>% 
+  select(Identifier_1,
+         sample = sample,
+         amount = amount,
+         `Area 28`,
+         d18O_corrected)
+
+final_data %>%
+  select(Identifier_1, sample, d18O_corrected) %>%
+  arrange(sample) %>% 
+  knitr::kable(digits = 2, 
+               col.names = c('Identifier 1',
+                             'sample',
+                             '$\\delta^{18}O$'),
+               caption = 'Corrected isotope compositions. All $\\delta^{18}O$ values are reported relative to VSMOW.')
+final_data %>% write_csv(path = paste0(file_name,'_corrected.csv'))
+```

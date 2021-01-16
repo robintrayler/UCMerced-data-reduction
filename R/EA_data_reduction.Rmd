@@ -1,0 +1,460 @@
+---
+set_title: 'Report'
+author: "Robin B. Trayler"
+date: "`r format(Sys.time(), '%B, %d, %Y')`"
+output:
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+# load required libraries
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(plotly)
+library(magrittr)
+```
+The $\delta^{13}C$ and $\delta^{15}N$ values of all samples were measured using a __Costech 4010__ Elemental Analyzer coupled with a __Delta V Plus Continuous Flow Isotope Ratio Mass Spectrometer__ housed in the Stable Isotope Facility at the University of California, Merced. If you would like the original Isodat 3.0 output file please request by sending an email to StableIsotopes@ucmerced.edu
+
+# Define Run Parameters
+```{r define_parameters, echo = TRUE}
+# location of raw data file
+########################################################################
+file_path = "~/Box Sync/Data Repository/EA/EA20200817.csv"             # 
+########################################################################
+nitrogen_peak = 3 # which peak is nitrogen
+carbon_peak = 4 # which peak is carbon
+total_peaks = 6 # total number of peaks
+
+linearity_correction = FALSE # should a linearity correction be performed?
+recalculate_CN_percent = TRUE # should C and N contents be recalculated?
+
+linearity_standard = "lin USGS 40" # standard used for linearity correction
+standards_used = c("USGS 41a", 'USGS 40') # standards used in run
+wt_percent_standard = 'USGS 40' # material to use
+reference_material = c("EA sed", 'costech acetanilide', 'MB squid', 'peach') # what would you like to monitor for reproducibility
+reject_amplitude = 500 # warn about peaks smaller that 500 mV
+
+```
+
+```{r, echo = FALSE}
+file_name = tools::file_path_sans_ext(basename(file_path))
+# set the document file name to the name of the data file read in
+```
+
+---
+title: "`r paste(file_name,' Report')`"
+---
+
+```{r, echo = FALSE}
+# define values for standards
+# isotope compositions must be in the same order as standard names
+# to add new reference materials, append them to this table. 
+
+standards = tribble( ~sample, ~d13C_true, ~d15N_true, ~C_wt_percent, ~N_wt_percent,
+                      "USGS 40", -26.39,   -4.52,         40.8,           9.52,
+                     "USGS 41a", +36.55,  +47.55,         40.8,           9.52,
+          "costech acetanilide", -27.86,   -0.75,        71.09,          10.36,
+                        "peach", -25.99,    1.98,         46.0,           2.82,
+                      "Em soil",  -27.6,    -1.7,         8.68,           0.38,
+                  "lin USGS 40", -26.39,   -4.52,         40.8,           9.52)
+
+```
+
+```{r load_data, echo=FALSE, message=FALSE, warning=FALSE}
+# Load data
+data = read_csv(file = file_path)
+
+# filter out the useful columns
+data %<>% select(Identifier_1 = `Identifier 1`,
+                 sample = `Identifier 2`,
+                 wt_percent = `Amt%`,
+                 amount = Amount,
+                 `Ampl. 28` = `Ampl. 28`,
+                 `Ampl. 44` = `Ampl. 44`,
+                 `Area 28` = `Area 28`,
+                 `Area 44` = `Area 44`,
+                 d15N_measured = `d 15N/14N`,
+                 d13C_measured = `d 13C/12C`,
+                 `Peak Nr` = `Peak Nr.`)
+```
+
+# Check For Small Samples and Missing Peaks
+```{r check_data, echo = FALSE}
+# Check for missing peaks
+ID = unique(data[['Identifier_1']])
+bad_peaks = rep(FALSE, length = length(ID))
+for(i in 1:length(ID)) {
+  if (data %>% filter(Identifier_1 == ID[i]) %>% select(`Peak Nr`) %>% nrow() < total_peaks) {
+    bad_peaks[i] = TRUE
+  }
+}
+
+```
+## Missing Peaks
+Sample(s) with an Identifier 1 of __`r ID[bad_peaks]`__ have fewer peaks than expected. Please check the raw data.
+
+```{r, check_size_28, echo = FALSE}
+
+ID = unique(data[['Identifier_1']])
+ID <- ID[!is.na(ID)]
+small_peaks_28 = rep(FALSE, length = length(ID))
+for(i in 1:length(ID)) {
+  A28 <- data %>% filter(Identifier_1 == ID[i] & `Peak Nr` == nitrogen_peak) %>% select(`Ampl. 28`)
+  if (A28 < reject_amplitude | is.na(A28)) {
+    small_peaks_28[i] <- TRUE
+  }
+}
+
+```
+
+## Small Nitrogen Peaks
+Sample(s) with an Identifier 1 of __`r ID[small_peaks_28]`__ have a mass 28 (nitrogen) amplitude smaller than __`r reject_amplitude`__ mV, and may need to be reanalyzed at a higher sample mass.
+
+```{r, check_size_44, echo = FALSE}
+
+ID = unique(data[['Identifier_1']])
+ID <- ID[!is.na(ID)]
+small_peaks_44 = rep(FALSE, length = length(ID))
+for(i in 1:length(ID)) {
+  A44 <- data %>% filter(Identifier_1 == ID[i] & `Peak Nr` == carbon_peak) %>% select(`Ampl. 44`)
+  if (A44 < reject_amplitude | is.na(A44)) {
+    small_peaks_44[i] <- TRUE
+  }
+}
+
+```
+## Small Carbon Peaks
+Sample(s) with an Identifier 1 of __`r ID[small_peaks_44]`__ have a mass 44 (carbon) amplitude smaller than __`r reject_amplitude`__ mV, and may need to be reanalyzed at a higher sample mass.
+
+```{r, echo=FALSE}
+# filter and select
+#Filter out the nitrogen and carbon data separately. This is based on peak number which can cause problems if there are #missing peaks. It might be better to filter on retention time so the code will only grab peaks within the correct time #window.
+
+# first nitrogen
+nitrogen = data %>% 
+  filter(`Peak Nr` == nitrogen_peak) %>% 
+  select(Identifier_1, 
+         sample,
+         N_wt_percent = wt_percent,
+         amount,
+         `Area 28`,
+         d15N_measured,
+         `Peak Nr`)
+
+# now carbon
+carbon = data %>% 
+  filter(`Peak Nr` == carbon_peak) %>% 
+  select(Identifier_1, 
+         sample,
+         C_wt_percent = wt_percent,
+         amount,
+         `Area 44`,
+         d13C_measured,
+         `Peak Nr`)
+
+```
+
+
+# Linearity Corrections
+
+```{r, N_linearity, echo = FALSE}
+if (linearity_correction == TRUE) {
+  # find samples with 'lin' prefix
+  N_linearity <- nitrogen %>% filter(str_detect(sample, linearity_standard))
+  # calculate coefficients
+  N_coeff = N_linearity %>% lm(d15N_measured ~ `Area 28`, data = .) %>% coef()
+  # calculate R squared
+  N_summary = N_linearity %>% lm(d15N_measured ~ `Area 28`, data = .) %>% summary()
+  
+  # make a plot ------------------------------------------------------------------------
+  nitrogen %>% 
+    filter(str_detect(sample, linearity_standard)) %>% 
+    with(plot(x = `Area 28`, 
+              y = d15N_measured,
+              pch = 21, 
+              bg = 'tomato', 
+              cex = 1.5,
+              xlab = 'Mass 28 peak area',
+              ylab = expression(delta^{15}~'N'['measured']),
+              main = expression(delta^{15}~'N linearity correction'),
+              tcl = 0.25))
+  abline(a = N_coeff[1], b = N_coeff[2], lwd = 2, col = 'tomato')
+  
+  # only perform a linearity correction if the R^2 is higher than 0.65
+  if (N_summary$r.squared > 0.65) {
+    accepted_value <- as.numeric(N_linearity %>% select(d15N_measured) %>% summarise(mean(d15N_measured)))
+    nitrogen <- nitrogen %>% mutate(d15N_measured = d15N_measured - (`Area 28` * N_coeff[2] + N_coeff[1] - accepted_value))
+  }
+  N_fit <- nitrogen %>% filter(sample == linearity_standard) %>% lm(d15N_measured ~ `Area 28`, data = .)
+  abline(N_fit, lwd = 2, col = 'steelblue', lty = 2)
+  nitrogen %>% 
+    filter(sample == linearity_standard) %>% 
+    with(points(x = `Area 28`, 
+                y = d15N_measured,
+                pch = 21,
+                cex = 1,
+                bg = 'steelblue'))
+  
+  legend('bottomright',
+         legend = c('raw data', 'linear trend removed'),
+         pch = 21,
+         pt.bg = c('tomato','steelblue'))
+}
+
+```
+
+
+```{r C_linearity, echo = F}
+if (linearity_correction == TRUE) {
+  # find samples with 'lin' prefix
+  C_linearity <- carbon %>% filter(str_detect(sample, linearity_standard))
+  # calculate coefficients
+  C_coeff = C_linearity %>% lm(d13C_measured ~ `Area 44`, data = .) %>% coef()
+  # calculate R squared
+  C_summary = C_linearity %>% lm(d13C_measured ~ `Area 44`, data = .) %>% summary()
+  # make a plot ------------------------------------------------------------------------
+  carbon %>% 
+    filter(str_detect(sample, linearity_standard)) %>% 
+    with(plot(x = `Area 44`, 
+              y = d13C_measured,
+              pch = 21, 
+              bg = 'tomato', 
+              cex = 1.5,
+              xlab = 'Mass 44 peak area',
+              ylab = expression(delta^{13}~'C'['measured']),
+              main = expression(delta^{13}~'C linearity correction'),
+              tcl = 0.25))
+  abline(a = C_coeff[1], b = C_coeff[2], lwd = 2, col = 'tomato')
+  if(C_summary$r.squared > 0.6) {
+    accepted_value <- as.numeric(C_linearity %>% select(d13C_measured) %>% summarise(mean(d13C_measured)))
+    carbon <- carbon %>% mutate(d13C_measured = d13C_measured - (`Area 44` * C_coeff[2] + C_coeff[1] - accepted_value))
+  }
+  C_fit <- carbon %>% filter(sample == linearity_standard) %>% lm(d13C_measured ~ `Area 44`, data = .)
+  
+  abline(C_fit, lwd = 2, col = 'steelblue', lty = 2)
+  carbon %>% 
+    filter(sample == linearity_standard) %>% 
+    with(points(x = `Area 44`, 
+                y = d13C_measured,
+                pch = 21,
+                cex = 1,
+                bg = 'steelblue'))
+  legend('bottomright',
+         legend = c('raw data', 'linear trend removed'),
+         pch = 21,
+         pt.bg = c('tomato','steelblue'))
+}
+```
+
+# Standard correction
+The isotope composition of unknowns samples were corrected to the international PDB ($\delta^{13}C$) and Air ($\delta^{15}N$) scales using the __`r paste(standards_used, collapse = ' and ')`__ standard reference materials. Total carbon and nitrogen contents were calculated using an in house reference material, __`r paste(wt_percent_standard)`__ which was also monitored to track the analytical reproducibility of isotope compositions. Isotope compositions for standard reference materials are shown in the table 1. 
+
+```{r echo=FALSE}
+# fit a line to the nitrogen data
+N_fit = nitrogen %>% 
+  filter(sample %in% standards_used) %>% 
+  left_join(standards, by = 'sample') %>% 
+  lm(d15N_true ~ d15N_measured , data = .) 
+
+# fit a line to the carbon data
+C_fit = carbon %>% 
+  filter(sample %in% standards_used) %>% 
+  left_join(standards, by = 'sample') %>% 
+  lm(d13C_true ~ d13C_measured , data = .)
+
+# display a table with the acceted values for the standards
+knitr::kable(standards %>% filter(sample %in% standards_used),
+             col.names = c('Standard', '$\\delta^{13}C$', '$\\delta^{15}N$', '$C \\%$', '$N \\%$'),
+             caption = 'Accepted values for isotope standard reference materials')
+
+```
+
+```{r carbon_fit, echo=FALSE, fig.align='center', fig.height=4, fig.width=5}
+# plot the results for carbon
+carbon %>% 
+  filter(sample %in% standards_used) %>% 
+  left_join(standards, by = 'sample') %>% 
+  with(plot(x = d13C_measured, 
+            y = d13C_true, 
+            pch = 21, 
+            bg = 'tomato', 
+            cex = 1.5,
+            xlab = expression(delta^{13}~'C'['measured']),
+            ylab = expression(delta^{13}~'C'['accepted']),
+            main = expression(delta^{13}~'C standard calibration'),
+            tcl = 0.25))
+grid()
+abline(v = 0)
+abline(h = 0)
+# add the calibration curve
+abline(C_fit, lwd = 2)
+```
+A linear regression of the measured and accepted $\delta^{13}C$ values for the __`r paste(standards_used, collapse = ' and ')`__ standard reference materials returned a slope of __`r round(as.numeric(C_fit$coefficients[2]),3)`__ and an intercept of __`r round(as.numeric(C_fit$coefficients[1]),3)`__. with an $r^2$ of __`r summary(C_fit)$r.squared`__
+
+```{r nitrogen_fit, echo=FALSE, fig.align='center', fig.height=4, fig.width=5}
+# plot the results for nitrogen
+nitrogen %>% 
+  filter(sample %in% standards_used) %>% 
+  left_join(standards, by = 'sample') %>% 
+  with(plot(x = d15N_measured, 
+            y = d15N_true, 
+            pch = 21, 
+            bg = 'tomato', 
+            cex = 1.5,
+            xlab = expression(delta^{15}~'N'['measured']),
+            ylab = expression(delta^{15}~'N'['true']),
+            main = expression(delta^{15}~'N standard calibration'),
+            tcl = 0.25))
+grid()
+abline(v = 0)
+abline(h = 0)
+# add the calibration curve
+abline(N_fit, lwd = 2)
+```
+A linear regression of the measured and accepted $\delta^{15}N$ values for the __`r paste(standards_used, collapse = ' and ')`__ standard reference materials returned a slope of __`r round(as.numeric(N_fit$coefficients[2]),3)`__ and an intercept of __`r round(as.numeric(N_fit$coefficients[1]),3)`__. with an $r^2$ of __`r summary(N_fit)$r.squared`__
+
+```{r echo=FALSE}
+### Correct the data using the linear regression results
+N_fit %<>% coefficients()
+C_fit %<>% coefficients()
+nitrogen %<>% mutate(d15N_corrected = N_fit[1] + N_fit[2] * d15N_measured)
+carbon %<>% mutate(d13C_corrected = C_fit[1] + C_fit[2] * d13C_measured)
+```
+
+```{r echo = FALSE}
+# render a table of the final data
+final_data <- nitrogen %>% 
+  left_join(carbon, 
+            by = 'Identifier_1') %>% 
+  select(Identifier_1,
+         sample = sample.x,
+         amount = amount.x,
+         `Area 28`,
+         `Area 44`,
+         d13C_corrected,
+         d15N_corrected,
+         N_wt_percent,
+         C_wt_percent)
+
+```
+
+# Calculate N and C percent
+```{r include=FALSE}
+#Recalculate N and C percent
+if (recalculate_CN_percent == TRUE) {
+  # filter out the mass of carbon
+  C_wt <- standards %>% filter(sample == wt_percent_standard) %>% select(C_wt_percent)
+  # extract the coefficients of a 2nd order polynomial model
+  C_wt_fit <- final_data %>% 
+    filter(str_detect(sample, wt_percent_standard)) %>% 
+    mutate(normalized = amount * C_wt[[1]]) %>%
+    lm(normalized ~ `Area 44`, data = .) %>% coef()
+  
+  # apply the model ot the data
+  final_data %<>% mutate(C_wt_percent = (`Area 44` * C_wt_fit[2] + C_wt_fit[1]) / amount)
+  
+  # filter out the mass of nitrogen
+  N_wt <- standards %>% filter(sample == wt_percent_standard) %>% select(N_wt_percent)
+  # extract the coefficients of a 2nd order polynomial model
+  N_wt_fit <- final_data %>% 
+    filter(str_detect(sample, wt_percent_standard)) %>% 
+    mutate(normalized = amount * N_wt[[1]]) %>%
+    lm(normalized ~ `Area 28`, data = .) %>% coef()
+  # apply the model ot the data
+  final_data <- final_data %>% mutate(N_wt_percent = (`Area 28`* N_wt_fit[2] + N_wt_fit[1]) / amount)
+  final_data <- final_data %>% mutate(`C/N` = C_wt_percent/N_wt_percent)
+}
+
+```
+
+
+```{r, echo = F, fig.align='center', fig.height=4, fig.width=5}
+if (recalculate_CN_percent == TRUE) {
+  final_data %>% 
+    filter(str_detect(sample, wt_percent_standard)) %>% 
+    mutate(normalized = amount * C_wt[[1]]) %>%
+    with(plot(x = `Area 44`, y = normalized,
+              pch = 21, 
+              bg = 'tomato', 
+              cex = 1.5,
+              xlab = expression('mass 44 peak area'),
+              ylab = expression('carbon content'),
+              main = expression('carbon weight percent calibration curve'),
+              tcl = 0.25))
+  grid()
+  A44range <- final_data %>% select(`Area 44`) %>% range(na.rm = T) 
+  A44grid <- seq(A44range[1], A44range[2], length = 1000)
+  lines(A44grid, C_wt_fit[2] * A44grid + C_wt_fit[1], lwd = 2)
+}
+```
+```{r, echo=F, fig.align='center', fig.height=4, fig.width=5}
+if (recalculate_CN_percent == TRUE) {
+  final_data %>% 
+    filter(str_detect(sample, wt_percent_standard)) %>% 
+    mutate(normalized = amount * N_wt[[1]]) %>%
+    with(plot(x = `Area 28`, 
+              y = normalized,
+              pch = 21, 
+              bg = 'tomato', 
+              cex = 1.5,
+              xlab = expression('mass 28 peak area'),
+              ylab = expression('nitrogen content'),
+              main = expression('nitrogen weight percent calibration curve'),
+              tcl = 0.25))
+  grid()
+  A28range <- final_data %>% select(`Area 28`) %>% range(na.rm = T) 
+  A28grid <- seq(A28range[1], A28range[2], length = 1000)
+  lines(A28grid, N_wt_fit[2] * A28grid + N_wt_fit[1], lwd = 2)
+}
+```
+
+# Standard Summary
+Summary statistics for the __`r paste(standards_used, collapse = ' and ')`__ standard reference materials and the __`r paste(reference_material, collapse = ' and ')`__ in house reference are shown in the table 2. 
+
+```{r, echo = F}
+final_data %<>% mutate(`C/N` = C_wt_percent/N_wt_percent)
+final_data %>% 
+  filter(sample %in% c(standards_used, reference_material)) %>% 
+  group_by(sample) %>% 
+  summarise(d15N_mean = mean(d15N_corrected),
+            d15N_sd = sd(d15N_corrected),
+            d13C_mean = mean(d13C_corrected),
+            d13C_sd = sd(d13C_corrected),
+            N_wt_percent_mean = mean(N_wt_percent),
+            N_wt_percent_sd = sd(N_wt_percent),
+            C_wt_percent_mean = mean(C_wt_percent),
+            C_wt_percent_sd = sd(C_wt_percent)) %>% 
+  knitr::kable(digits = 2, 
+               col.names = c('sample', 
+                             '$\\delta^{15}N_{mean}$', 
+                             '$\\delta^{15}N_{sd}$', 
+                             '$\\delta^{13}C_{mean}$', 
+                             '$\\delta^{13}C_{sd}$', 
+                             '$N \\%_{mean}$',
+                             '$N \\%_{sd}$',
+                             '$C \\%_{mean}$',
+                             '$C \\%_{sd}$'),
+               caption = 'Summary statistics for standard 
+              reference materials and in house reference materials.')
+```
+
+# Final Data Table
+```{r, echo = FALSE}
+final_data %>%
+  select(Identifier_1, sample, d13C_corrected, d15N_corrected, N_wt_percent, C_wt_percent, `C/N`) %>%
+  arrange(sample) %>% 
+  knitr::kable(digits = 2, 
+               col.names = c('Identifier 1',
+                             'sample',
+                             '$\\delta^{13}C$', 
+                             '$\\delta^{15}N$', 
+                             '$N \\%$',
+                             '$C \\%$',
+                             '$C:N$'),
+               caption = 'Corrected isotope compositions, 
+               total carbon and nitrogen content, and C:N ratios. C:N ratios are reported as wt/wt.')
+```
+
+```{r, include = FALSE}
+final_data %>% arrange(sample) %>% write_csv(path = paste0(file_name,'_corrected.csv'))
+```
