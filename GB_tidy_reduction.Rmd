@@ -17,17 +17,16 @@ output:
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-The $\delta^{13}C$ and $\delta^{18}O$ values of all samples were measured using a __Thermo-Finnigan Gasbench II__ coupled with a __Delta V Plus Continuous Flow Isotope Ratio Mass Spectrometer__ housed in the Stable Isotope Facility at the University of California, Merced.
+The $\delta^{13}C$ and $\delta^{18}O$ values of all samples were measured using a **Thermo-Finnigan Gasbench II** coupled with a **Delta V Plus Continuous Flow Isotope Ratio Mass Spectrometer** housed in the Stable Isotope Facility at the University of California, Merced.
 
 This report includes several files:
 
-1) A `.html` or `.pdf` report summarizing all data corrections and instrument reproducibility
-2) A `.csv` file with the corrected data
-3) A `.csv` file with the uncorrected data 
-4) A `.Rmd` (R Markdown) document containing the **R** code used to correct the data
+1)  A `.html` or `.pdf` report summarizing all data corrections and instrument reproducibility
+2)  A `.csv` file with the corrected data
+3)  A `.csv` file with the uncorrected data
+4)  A `.Rmd` (R Markdown) document containing the **R** code used to correct the data
 
-If you would like the original Isodat 3.0 `.dxf` files please request by sending an email to stableisotopes@ucmerced.edu
-
+If you would like the original Isodat 3.0 `.dxf` files please request by sending an email to [stableisotopes\@ucmerced.edu](mailto:stableisotopes@ucmerced.edu){.email}
 
 ```{r, message = FALSE, echo = FALSE}
 library(tidyverse)
@@ -54,9 +53,10 @@ colors <- viridis(n = length(standards$id2) + 1, end = 0.8)
 names(colors) <- c(standards$id2, TRUE)
 ```
 
-
 # Setup {.tabset}
+
 ## Set File Path
+
 ```{r}
 # file path to the isodat csv file 
 file_path <- '~/Box Sync/Data Repository/Gasbench/GB20201211.csv'
@@ -72,7 +72,9 @@ title: "`r paste(file_name,' Report')`"
 ---
 
 ## Analysis Parameters
+
 ### Select Sample Peaks
+
 ```{r}
 # analyte peaks
 sample_peaks <- 5:8
@@ -80,6 +82,7 @@ reference_peaks <- 1:3
 ```
 
 ### Set Rejection Criteria
+
 ```{r}
 # rejection criteria
 small_peaks <- 500 # warn about peaks smaller than ###mV
@@ -89,6 +92,7 @@ drop_outliers <- FALSE
 ```
 
 ### Select Correction Standards
+
 ```{r}
 # standards used in run
 standards_used = c('NBS 18', 'USGS 44', 'CM')
@@ -103,7 +107,9 @@ check_material = c('NIST 120C')
 ```
 
 ## Drift and Linearity Model Specification
+
 ### Instrument Drift
+
 ```{r}
 # should a drift correction be applied to carbon?
 carbon_drift <- FALSE
@@ -116,8 +122,8 @@ oxygen_drift <- FALSE
 oxygen_drift_model <- 'lm'
 ```
 
-
 ### Mass Linearity
+
 ```{r}
 # should a linearity correction be applied?
 # mass linearity corrections use a linear model
@@ -125,8 +131,8 @@ carbon_linearity <- TRUE
 oxygen_linearity <- TRUE
 ```
 
-
 # Data Screening
+
 ```{r, message = FALSE, echo = FALSE}
 # read data
 raw_data <- read_csv(file = file_path)
@@ -148,6 +154,7 @@ data <- raw_data %>%
 ```
 
 # Linearity Correction {.tabset}
+
 ```{r, echo = FALSE, message = FALSE}
 # figure out limits for plots 
 C_ylims <- data %>% 
@@ -251,6 +258,7 @@ O_lin_corrected <- data %>%
 ```
 
 ## Carbon Linearity Correction
+
 A locally smoothed polynomial (loess) was fit to mass 44 peak area (mV/s) versus the pooled within sample $\delta^{13}C$ deviations for all analyses. Since a linearity correction was `r ifelse(carbon_linearity,' ','not')` requested, the trend was `r ifelse(carbon_linearity,' ','not')` subtracted from the raw data.
 
 ```{r, echo = FALSE, message = FALSE, fig.align='center', warning = FALSE}
@@ -258,6 +266,7 @@ plot_grid(C_lin_uncorrected, C_lin_corrected)
 ```
 
 ## Oxygen Linearity Correction
+
 A locally smoothed polynomial (loess) was fit to mass 44 peak area (mV/s) versus the pooled within sample $\delta^{18}O$ deviations for all analyses. Since a linearity correction was `r ifelse(oxygen_linearity,' ','not')` requested, A the trend was `r ifelse(oxygen_linearity,' ','not')` subtracted from the raw data.
 
 ```{r, echo = FALSE, message = FALSE, fig.align='center', warning = FALSE}
@@ -282,8 +291,8 @@ data <-  data %>%
   ungroup()
 ```
 
-
 # Drift Correction {.tabset}
+
 ```{r, echo = FALSE, message = FALSE}
 # figure out limits for plots 
 C_ylims <- data %>% 
@@ -340,6 +349,7 @@ O_drift_uncorrected <- data %>%
 ```
 
 ```{r, echo = FALSE, message = FALSE}
+
 if(carbon_drift) {
   if(carbon_drift_model == 'lm') {
     C_drift_fit <- data %>% 
@@ -351,7 +361,8 @@ if(carbon_drift) {
       loess(d13C_dev ~ seq_nr, data = .)
   }
   data <- data %>% 
-    mutate(d13C_measured = d13C_measured - predict(C_drift_fit, newdata = data)) %>%
+    mutate(d13C_measured = d13C_measured - predict(C_drift_fit, 
+                                                   newdata = data)) %>%
     group_by(id2) %>%
     mutate(d13C_dev = d13C_measured - mean(d13C_measured)) %>%
     ungroup()
@@ -368,7 +379,8 @@ if(oxygen_drift) {
       loess(d18O_dev ~ seq_nr, data = .)
   }
   data <- data %>% 
-    mutate(d18O_measured = d18O_measured - predict(O_drift_fit, newdata = data)) %>%
+    mutate(d18O_measured = d18O_measured - predict(O_drift_fit, 
+                                                   newdata = data)) %>%
     group_by(id2) %>%
     mutate(d18O_dev = d18O_measured - mean(d18O_measured)) %>%
     ungroup()
@@ -397,7 +409,6 @@ C_drift_corrected <- data %>%
   ggtitle('Corrected')
 ```
 
-
 ```{r, echo = FALSE, message=FALSE}
 # oxygen drift plot
 O_drift_corrected <- data %>% 
@@ -421,7 +432,8 @@ O_drift_corrected <- data %>%
 ```
 
 ## Carbon Drift Correction
-Carbon isotope compositional drift over the period of analysis was monitored using the **`r paste(drift_material, collapse = ' and ')`** reference material(s). Since a drift correction was `r ifelse(carbon_drift,' ','not')` requested, A **`r if(carbon_drift_model == 'lm') {paste('linear')} else if(carbon_drift_model == 'loess') {paste('loess')}`** model was `r ifelse(carbon_drift,' ','not')` subtracted from the raw data.
+
+Carbon isotope composition drift over the period of analysis was monitored using the **`r paste(drift_material, collapse = ' and ')`** reference material(s). Since a drift correction was `r ifelse(carbon_drift,' ','not')` requested, A **`r if(carbon_drift_model == 'lm') {paste('linear')} else if(carbon_drift_model == 'loess') {paste('loess')}`** model was `r ifelse(carbon_drift,' ','not')` subtracted from the raw data.
 
 ```{r, echo = FALSE, message = FALSE, fig.align='center', warning = FALSE}
 if(carbon_drift){
@@ -430,7 +442,8 @@ if(carbon_drift){
 ```
 
 ## Oxygen Drift Correction
-Oxygen isotope compositional drift over the period of analysis was monitored using the **`r paste(drift_material, collapse = ' and ')`** reference material(s). Since a drift correction was `r ifelse(oxygen_drift,' ','not')` requested, A **`r if(oxygen_drift_model == 'lm') {paste('linear')} else if(oxygen_drift_model == 'loess') {paste('loess')}`** model was `r ifelse(oxygen_drift,' ','not')` subtracted from the raw data.
+
+Oxygen isotope composition drift over the period of analysis was monitored using the **`r paste(drift_material, collapse = ' and ')`** reference material(s). Since a drift correction was `r ifelse(oxygen_drift,' ','not')` requested, A **`r if(oxygen_drift_model == 'lm') {paste('linear')} else if(oxygen_drift_model == 'loess') {paste('loess')}`** model was `r ifelse(oxygen_drift,' ','not')` subtracted from the raw data.
 
 ```{r, echo = FALSE, message = FALSE, fig.align='center', warning = FALSE}
 if(oxygen_drift){
@@ -439,6 +452,7 @@ if(oxygen_drift){
 ```
 
 # Standardization {.tabset}
+
 ```{r, echo = FALSE, message = FALSE, fig.align='center', warning = FALSE}
 C_std_plot <- data %>% 
   filter(id2 %in% standards_used & is.finite(d13C_true)) %>% 
@@ -487,7 +501,8 @@ data <- data %>%
   mutate(d13C_corrected = predict(C_std_fit, newdata = data),
          d18O_corrected = predict(O_std_fit, newdata = data))
 ```
-The isotope composition of unknowns samples were corrected to the international PDB ($\delta^{13}C$, $\delta^{18}O$)  scale using the **`r paste(standards_used, collapse = ' and ')`** standard reference materials. Isotope compositions for standard reference materials are shown in the **Table 1**.
+
+The isotope composition of unknowns samples were corrected to the international PDB ($\delta^{13}C$, $\delta^{18}O$) scale using the **`r paste(standards_used, collapse = ' and ')`** standard reference materials. Isotope compositions for standard reference materials are shown in the **Table 1**.
 
 ```{r, echo = FALSE}
 standards %>% 
@@ -502,7 +517,9 @@ standards %>%
 ```
 
 # Final Data {.tabset}
+
 ## Summary
+
 ```{r, echo = FALSE, message=FALSE}
 final_data <- data %>% 
   select(Identifier_1 = id1, 
@@ -532,6 +549,7 @@ final_data %>%
 ```
 
 ## Full Data Table
+
 ```{r, echo = FALSE}
 final_data %>%
   arrange(sample) %>%
