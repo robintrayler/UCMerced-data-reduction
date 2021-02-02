@@ -72,7 +72,22 @@ names(colors) <- c(standards$id2, TRUE)
 ## File Path
 ```{r}
 # file path to the isodat csv file 
-file_path <- '~/Box Sync/Data Repository/EA/EA20210107.csv'
+file_path <- '~/Box Sync/Data Repository/EA/EA20210129.csv'
+```
+
+```{r, echo = FALSE}
+# set the document file name to the name of the data file read in
+file_name = tools::file_path_sans_ext(basename(file_path))
+current_year <- format(Sys.Date(), '%Y')
+
+#Check if directories exists and create if they doesn't
+if(!dir.exists(path = paste0('~/Box Sync/Data Repository/EA/Corrected/',current_year))) {
+  dir.create(path = paste0('~/Box Sync/Data Repository/EA/Corrected/', current_year))
+}
+
+if(!dir.exists(path = paste0('~/Box Sync/Data Repository/EA/Corrected/',current_year,'/', file_name))) {
+  dir.create(path = paste0(path = paste0('~/Box Sync/Data Repository/EA/Corrected/',current_year,'/', file_name)))
+}
 ```
 
 ## Analysis Parameters
@@ -101,7 +116,7 @@ standards_used = c('USGS 41a', 'USGS 40')
 # material to use for linearity corrections
 linearity_material = c('USGS 40')
 # material to use for drift corrections
-drift_material = c('USGS 41a', 'costech acetanilide')
+drift_material = c('USGS 41a', 'USGS 40')
 # material to use for weight calculations
 weight_percent_material = c('USGS 40', 'USGS 41a', 'costech acetanilide')
 # in house 'check' materials for run quality
@@ -134,6 +149,7 @@ carbon_linearity <- TRUE
 # set the document file name to the name of the data file read in
 file_name = tools::file_path_sans_ext(basename(file_path))
 ```
+
 ---
 title: "`r paste(file_name,' Report')`"
 ---
@@ -733,7 +749,12 @@ final_data %>%
 ```
 
 ```{r, echo = FALSE, message = FALSE}
-final_data %>% arrange(sample) %>% write_csv(path = paste0('./EA_results/', file_name,'_corrected.csv'))
-raw_data %>% write_csv(path = paste0('./EA_results/', file_name, '_raw.csv'))
-file.copy(from = 'EA_tidy_reduction.Rmd', to = paste0('./EA_results/', file_name,'_code.Rmd'))
+final_data %>% 
+  arrange(sample) %>% 
+  write_csv(path = paste0('~/Box Sync/Data Repository/EA/Corrected/',current_year,'/',file_name,'/',file_name,'_corrected.csv'))
+
+raw_data %>% 
+  write_csv(path = paste0('~/Box Sync/Data Repository/EA/Corrected/',current_year,'/',file_name,'/',file_name, '_raw.csv'))
+
+file.copy(from = 'EA_tidy_reduction.Rmd', to = paste0('~/Box Sync/Data Repository/EA/Corrected/',current_year,'/',file_name,'/',file_name,'_code.Rmd'))
 ```
