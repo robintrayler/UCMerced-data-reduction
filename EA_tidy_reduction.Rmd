@@ -72,7 +72,7 @@ names(colors) <- c(standards$id2, TRUE)
 ## File Path
 ```{r}
 # file path to the isodat csv file 
-file_path <- '~/Box Sync/Data Repository/EA/EA20210129.csv'
+file_path <- '~/Box Sync/Data Repository/EA/EA20210407.csv'
 ```
 
 ```{r, echo = FALSE}
@@ -82,7 +82,7 @@ current_year <- format(Sys.Date(), '%Y')
 
 #Check if directories exists and create if they doesn't
 if(!dir.exists(path = paste0('~/Box Sync/Data Repository/EA/Corrected/',current_year))) {
-  dir.create(path = paste0('~/Box Sync/Data Repository/EA/Corrected/', current_year))
+  dir.create(path = paste0('~/Box Sync/Data Repository/EA/Corrected/',current_year))
 }
 
 if(!dir.exists(path = paste0('~/Box Sync/Data Repository/EA/Corrected/',current_year,'/', file_name))) {
@@ -99,6 +99,10 @@ nitrogen_peak <- 3
 carbon_peak <- 4
 # How many total peaks should there be?
 total_peaks <- 6
+
+# DANGER ZONE
+nitrogen_only <- FALSE # should only nitrogen data be corrected? 
+carbon_only   <- FALSE # should only carbon data be corrected? 
 ```
 
 ### Set Rejection Criteria
@@ -116,7 +120,7 @@ standards_used = c('USGS 41a', 'USGS 40')
 # material to use for linearity corrections
 linearity_material = c('USGS 40')
 # material to use for drift corrections
-drift_material = c('USGS 41a', 'USGS 40')
+drift_material = c('USGS 41a', 'costech acetanilide')
 # material to use for weight calculations
 weight_percent_material = c('USGS 40', 'USGS 41a', 'costech acetanilide')
 # in house 'check' materials for run quality
@@ -174,6 +178,21 @@ data <- raw_data %>%
          d13C_measured = `d 13C/12C`,
          d15N_measured = `d 15N/14N`) %>% 
   mutate(date_time = mdy(date) + hms(time))
+
+# add some dummy values if only running for nitrogen or carbon
+if(nitrogen_only) {
+  data <- data %>% 
+    mutate(amp44 = 1,
+           area44 = 1, 
+           d13C_measured = 1)
+}
+
+if(carbon_only) {
+  data <- data %>% 
+    mutate(amp28 = 1,
+           area28 = 1, 
+           d15N_measured = 1)
+}
 ```
 
 ```{r, echo = FALSE}
@@ -319,7 +338,7 @@ if(nitrogen_drift) {
 ```
 
 ```{r, echo = FALSE, message=FALSE}
-if(carbon_drift){
+if(carbon_drift) {
   # post correction plot --------------------------------------------------------
   C_drift_corrected <- carbon %>% 
     filter(id2 %in% drift_material) %>% 
@@ -339,7 +358,7 @@ if(carbon_drift){
     guides(color=guide_legend(ncol=2))
 }
 
-if(nitrogen_drift){
+if(nitrogen_drift) {
   # post correction plot --------------------------------------------------------
   N_drift_corrected <- nitrogen %>% 
     filter(id2 %in% drift_material) %>% 
@@ -364,7 +383,7 @@ if(nitrogen_drift){
 Nitrogen isotope compositional drift over the period of analysis was monitored using the **`r paste(drift_material, collapse = ' and ')`** reference material(s). Since a drift correction was `r ifelse(carbon_drift,' ','not')` requested, A **`r if(nitrogen_drift_model == 'lm') {paste('linear')} else if(nitrogen_drift_model == 'loess') {paste('loess')}`** model was `r ifelse(nitrogen_drift,' ','not')` subtracted from the raw data.
 
 ```{r, echo = FALSE, message = FALSE, fig.align='center', warning = FALSE}
-if(nitrogen_drift){
+if(nitrogen_drift) {
   plot_grid(N_drift_uncorrected, N_drift_corrected)
 }
 ```
@@ -374,7 +393,7 @@ if(nitrogen_drift){
 Carbon isotope compositional drift over the period of analysis was monitored using the **`r paste(drift_material, collapse = ' and ')`** reference material(s). Since a drift correction was `r ifelse(carbon_drift,' ','not')` requested, A **`r if(carbon_drift_model == 'lm') {paste('linear')} else if(carbon_drift_model == 'loess') {paste('loess')}`** model was `r ifelse(carbon_drift,' ','not')` subtracted from the raw data.
 
 ```{r, echo = FALSE, message = FALSE, fig.align='center', warning = FALSE}
-if(carbon_drift){
+if(carbon_drift) {
   plot_grid(C_drift_uncorrected, C_drift_corrected)
 }
 ```
@@ -455,7 +474,7 @@ N_lin_fit <- nitrogen %>%
   lm(formula = d15N_dev ~ area28, data = .)
 N_lin_sum <- summary(N_lin_fit)
 
-if(nitrogen_linearity){
+if(nitrogen_linearity) {
   nitrogen <- nitrogen %>% 
     mutate(d15N_measured = d15N_measured - predict(N_lin_fit, newdata = nitrogen)) %>% 
     group_by(id2) %>% 
@@ -699,6 +718,23 @@ final_data <- full_join(carbon, nitrogen) %>%
          N_wt_percent,
          C_wt_percent) %>% 
   mutate(`C/N` = C_wt_percent/N_wt_percent)
+
+if(nitrogen_only) {
+  final_data <- final_data %>% 
+    mutate(`Area 44` = NA,
+           d13C_corrected = NA, 
+           C_wt_percent = NA, 
+           `C/N` = NA)
+}
+
+if(carbon_only) {
+  final_data <- final_data %>% 
+    mutate(`Area 28` = NA,
+           d15N_corrected = NA, 
+           N_wt_percent = NA, 
+           `C/N` = NA)
+}
+
 ```
 
 ```{r, echo = FALSE, message = FALSE}
