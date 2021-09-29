@@ -51,22 +51,17 @@ library(lubridate)
 theme_set(theme_bw()) # set ggplot theme
 ```
 
-```{r, echo = FALSE}
-z_score <- function(x) {
-  abs(x - mean(x)) / sd(x)
-}
-```
-
 ```{r, echo = FALSE, message = FALSE}
-# standards <- read_csv(file = './data/EA_standards.csv')
-standards <- tribble(~id2,      ~d18O_true,
-                     'USGS 80',   13.1, 
-                     'USGS 81',   35.4,
-                     'IAEA 601',  23.3,
-                     'CBS',       3.8,
-                     'KHS',       20.3,
-                     'EA Ag3PO4', 21.7)
-
+standards <- tribble(~id2,      ~d18O_true, ~d2H_true, ~O_percent, ~H_percent,
+                     'USGS 80',   13.1,        NA,       15.29,       0,
+                     'USGS 81',   35.4,        NA,       15.29,       0,
+                     'IAEA 601',  23.3,        NA,       26.20 ,      4.91,
+                     'CBS',        3.8,       -157,        NA,         NA,
+                     'KHS',       20.3,      -35.3,        NA,         NA,
+                     'EA Ag3PO4', 21.7,        NA,        15.29,       0,
+                     'USGS 54',  17.79,       -150.4,       NA,         NA,
+                     'USGS 55',  19.12,        -28.2,       NA,         NA)
+# the +1 gets rid of yellow
 colors <- viridis(n = length(standards$id2) + 1)
 names(colors) <- c(standards$id2, TRUE)
 ```
@@ -75,36 +70,30 @@ names(colors) <- c(standards$id2, TRUE)
 ## File Path
 ```{r}
 # file path to the isodat csv file 
-file_path <- '~/Box Sync/Data Repository/TCEA/TCEA20210924.csv'
+file_path <- '~/Box Sync/Data Repository/TCEA/TCEA20210806.csv'
 ```
 
 ## Analysis Parameters
 ### Select Sample Peaks
 ```{r}
+# Which peak is the H2 analyte? 
+hydrogen_peak <- 3
 # Which peak is the CO analyte?
-oxygen_peak <- 3
+oxygen_peak <- 4
 # How many total peaks should there be?
-total_peaks <- 5
-```
-
-### Set Rejection Criteria
-```{r}
-# rejection criteria
-small_peaks <- 500 # warn about peaks smaller with an amplitude smaller than this
-# should 2 sigma outlier standards be dropped from isotope corrections
-drop_outliers <- FALSE 
+total_peaks <- 6
 ```
 
 ### Select Correction Standards
 ```{r}
 # standards used in run
-standards_used = c('USGS 80', 'USGS 81')
+standards_used = c('USGS 54', 'USGS 55')
 # material to use for linearity corrections
-linearity_material =  c('USGS 81', 'USGS 80')
+linearity_material =  c('IAEA 601')
 # material to use for drift corrections
-drift_material = c('USGS 81', 'USGS 80')
+drift_material = c('USGS 54', 'USGS 55')
 # in house 'check' materials for run quality
-check_material = c('EA Ag3PO4', 'NIST 120C', 'alfa asar', 'IAEA 601')
+check_material = c('EA spruce')
 ```
 
 ## Drift and Linearity Model Specification
@@ -112,8 +101,7 @@ check_material = c('EA Ag3PO4', 'NIST 120C', 'alfa asar', 'IAEA 601')
 ```{r}
 # should a drift correction be applied to oxygen
 oxygen_drift <- TRUE
-# model choices are either 'lm' for linear or 'loess' for loess
-oxygen_drift_model <- 'lm'
+hydrogen_drift <- TRUE
 ```
 
 ### Mass Linearity
@@ -121,21 +109,22 @@ oxygen_drift_model <- 'lm'
 # should a linearity correction be applied?
 # mass linearity corrections use a linear model
 oxygen_linearity <- TRUE
+hydrogen_linearity <- TRUE
 ```
 
 ```{r, echo = FALSE}
 # set the document file name to the name of the data file read in
 file_name = tools::file_path_sans_ext(basename(file_path))
-current_year <- format(Sys.Date(), '%Y')
-
-#Check if directories exists and create if they doesn't
-if(!dir.exists(path = paste0('~/Box Sync/Data Repository/TCEA/Corrected/',current_year))) {
-  dir.create(path = paste0('~/Box Sync/Data Repository/TCEA/Corrected/',current_year))
-}
-
-if(!dir.exists(path = paste0('~/Box Sync/Data Repository/TCEA/Corrected/',current_year,'/',file_name))) {
-  dir.create(path = paste0(path = paste0('~/Box Sync/Data Repository/TCEA/Corrected/',current_year,'/',file_name)))
-}
+# current_year <- format(Sys.Date(), '%Y')
+# 
+# #Check if directories exists and create if they doesn't
+# if(!dir.exists(path = paste0('~/Box Sync/Data Repository/TCEA/Corrected/',current_year))) {
+#   dir.create(path = paste0('~/Box Sync/Data Repository/TCEA/Corrected/',current_year))
+# }
+# 
+# if(!dir.exists(path = paste0('~/Box Sync/Data Repository/TCEA/Corrected/',current_year,'/',file_name))) {
+#   dir.create(path = paste0(path = paste0('~/Box Sync/Data Repository/TCEA/Corrected/',current_year,'/',file_name)))
+# }
 ```
 ---
 title: "`r paste(file_name,' Report')`"
@@ -153,59 +142,49 @@ data <- raw_data %>%
          peak_nr = `Peak Nr.`,
          weight = Amount,
          area28 = `Area 28`,
-         amp28 = `Ampl. 28`,
-         amp30 = `Ampl. 30`,
-         area30 = `Area 30`,
+         area2  = `Area 2`,
+         d2H_measured = `d 2H/1H`,
          d18O_measured = `d 18O/16O`)
 ```
 
-## Check for Missing Peaks
-```{r, echo = FALSE, message = FALSE}
-# check for missing peaks
-missing <- data %>% 
-  group_by(id1) %>% 
-  summarize(n = !(n() == total_peaks))
-```
-Sample(s) with an Identifier 1 of __`r missing$id1[missing$n]`__ have fewer peaks than expected. Please check the raw data.
-
-## Check for Small Peaks
 ```{r, echo = FALSE}
-small_O <- data %>% 
-  filter(peak_nr %in% oxygen_peak & amp28 < small_peaks) %>% 
-  select(id1)
-```
-
-Sample(s) with an Identifier 1 of __`r small_O$id1`__ have a mass 28 (carbon monoxide) amplitude smaller than __`r small_peaks`__ mV. Data from these samples may be unreliable.
-
-# Drift Correction {.tabset}
-
-```{r, echo = FALSE}
-data <- data %>% 
-  filter(peak_nr == oxygen_peak) %>% 
+# seperate out the data
+oxygen <- data %>% filter(peak_nr == oxygen_peak) %>% 
   group_by(id2) %>% 
   mutate(d18O_dev = d18O_measured - mean(d18O_measured)) %>% 
   ungroup()
+
+hydrogen <- data %>% filter(peak_nr == hydrogen_peak) %>% 
+  group_by(id2) %>% 
+  mutate(d2H_dev = d2H_measured - mean(d2H_measured)) %>% 
+  ungroup()
 ```
 
+# Drift Correction {.tabset}
 
 ```{r, echo=FALSE}
 # figure out axis limits ------------------------------------------------------
-O_ylims <- data %>% 
+O_ylims <- oxygen %>% 
   filter(id2 %in% drift_material) %>% 
   select(d18O_dev) %>% 
+  range() %>% pretty() %>% range()
+
+H_ylims <- hydrogen %>% 
+  filter(id2 %in% drift_material) %>% 
+  select(d2H_dev) %>% 
   range() %>% pretty() %>% range()
 ```
 
 ```{r, echo = FALSE, message=FALSE}
 # oxygen pre calibration plot -------------------------------------------------
-O_drift_uncorrected <- data %>% 
+O_drift_uncorrected <- oxygen %>% 
   filter(id2 %in% drift_material) %>% 
   ggplot(mapping = aes(x = seq_nr,
                        y = d18O_dev,
                        color = id2)) + 
   geom_point(size = 3) + 
   theme(legend.position = 'top') + 
-  geom_smooth(method = oxygen_drift_model,
+  geom_smooth(method = 'lm',
               se = FALSE, 
               color = 'black') + 
   scale_color_manual(values = colors) + 
@@ -214,33 +193,68 @@ O_drift_uncorrected <- data %>%
   ggtitle('Uncorrected') + 
   coord_cartesian(ylim = O_ylims) + 
   guides(color=guide_legend(ncol=2))
+
+# hydrogen pre calibration plot -----------------------------------------------
+H_drift_uncorrected <- hydrogen %>% 
+  filter(id2 %in% drift_material) %>% 
+  ggplot(mapping = aes(x = seq_nr,
+                       y = d2H_dev,
+                       color = id2)) + 
+  geom_point(size = 3) + 
+  theme(legend.position = 'top') + 
+  geom_smooth(method = 'lm',
+              se = FALSE, 
+              color = 'black') + 
+  scale_color_manual(values = colors) + 
+  xlab('sequence number') + 
+  ylab(expression(delta^2*H[deviation])) + 
+  ggtitle('Uncorrected') + 
+  coord_cartesian(ylim = H_ylims) + 
+  guides(color=guide_legend(ncol=2))
 ```
 
 ```{r, message = FALSE, echo = FALSE}
 # fit a Drift Correction ------------------------------------------------------
 if(oxygen_drift) {
-  if(oxygen_drift_model == 'lm') {
-    O_drift_fit <- data %>% 
-      filter(id2 %in% drift_material) %>%
-      lm(d18O_dev ~ seq_nr, data = .)
-  } else if(oxygen_drift_model == 'loess') {
-    O_drift_fit <- data %>% 
-      filter(id2 %in% drift_material) %>%
-      loess(d18O_dev ~ seq_nr, data = .)
-  }
-  data <- data %>% 
-    mutate(d18O_measured = d18O_measured - predict(O_drift_fit, newdata = data)) %>%
+  # generate a calibration
+  O_drift_fit <- oxygen %>% 
+    filter(id2 %in% drift_material) %>%
+    lm(d18O_dev ~ seq_nr, data = .)
+  
+  # apply the calibration
+  oxygen <- oxygen %>% 
+    mutate(d18O_measured = d18O_measured - predict(O_drift_fit, 
+                                                   newdata = oxygen)) %>%
+    # recalculate deviations
     group_by(id2) %>%
     mutate(d18O_dev = d18O_measured - mean(d18O_measured)) %>%
     ungroup()
 }
+
+
+if(hydrogen_drift) {
+  # generate a calibration
+H_drift_fit <- hydrogen %>% 
+    filter(id2 %in% drift_material) %>%
+    lm(d2H_dev ~ seq_nr, data = .)
+  
+  # apply the calibration
+  hydrogen <- hydrogen %>% 
+    mutate(d2H_measured = d2H_measured - predict(H_drift_fit, 
+                                                   newdata = hydrogen)) %>%
+    # recalculate deviations
+    group_by(id2) %>%
+    mutate(d2H_dev = d2H_measured - mean(d2H_measured)) %>%
+    ungroup()
+}
+
 ```
 
 
 ```{r, echo = FALSE, message=FALSE}
 if(oxygen_drift){
   # post correction plot --------------------------------------------------------
-  O_drift_corrected <- data %>% 
+  O_drift_corrected <- oxygen %>% 
     filter(id2 %in% drift_material) %>% 
     ggplot(mapping = aes(x = seq_nr,
                          y = d18O_dev,
@@ -258,6 +272,26 @@ if(oxygen_drift){
     guides(color=guide_legend(ncol=2))
 }
 
+if(hydrogen_drift){
+  # post correction plot --------------------------------------------------------
+  H_drift_corrected <- hydrogen %>% 
+    filter(id2 %in% drift_material) %>% 
+    ggplot(mapping = aes(x = seq_nr,
+                         y = d2H_dev,
+                         color = id2)) + 
+    geom_point(size = 3) + 
+    theme(legend.position = 'top') + 
+    geom_smooth(method = 'lm',
+                se = FALSE, 
+                color = 'black') + 
+    scale_color_manual(values = colors) + 
+    xlab('sequence number') + 
+    ylab(expression(delta^2*H[deviation])) + 
+    ggtitle('Corrected') + 
+    coord_cartesian(ylim = H_ylims) + 
+    guides(color=guide_legend(ncol=2))
+}
+
 ```
 
 ## Oxygen Drift Correction
@@ -267,20 +301,29 @@ Oxygen isotope compositional drift over the period of analysis was monitored usi
 if(oxygen_drift){
   plot_grid(O_drift_uncorrected, O_drift_corrected)
 }
+
+if(hydrogen_drift){
+  plot_grid(H_drift_uncorrected, H_drift_corrected)
+}
 ```
 
 # Linearity Corrections {.tabset}
 ```{r, echo = FALSE}
-O_ylims <- data %>% 
+O_ylims <- oxygen %>% 
   filter(id2 %in% linearity_material) %>% 
   select(d18O_dev) %>% 
+  range() %>% pretty() %>% range()
+
+H_ylims <- hydrogen %>% 
+  filter(id2 %in% linearity_material) %>% 
+  select(d2H_dev) %>% 
   range() %>% pretty() %>% range()
 ```
 
 ```{r, echo = FALSE}
 # Oxygen
 # pre calibration plot --------------------------------------------------------
-O_lin_uncorrected <- data %>% 
+O_lin_uncorrected <- oxygen %>% 
   filter(id2 %in% linearity_material) %>% 
   ggplot(mapping = aes(x = area28,
                        y = d18O_dev,
@@ -296,28 +339,58 @@ O_lin_uncorrected <- data %>%
   ggtitle('Uncorrected') + 
   coord_cartesian(ylim = O_ylims) + 
   guides(color=guide_legend(ncol=2))
+
+H_lin_uncorrected <- hydrogen %>% 
+  filter(id2 %in% linearity_material) %>% 
+  ggplot(mapping = aes(x = area2,
+                       y = d2H_dev,
+                       color = id2)) + 
+  geom_point(size = 3) + 
+  theme(legend.position = 'top') + 
+  geom_smooth(method = 'lm',
+              se = FALSE, 
+              color = 'black') + 
+  scale_color_manual(values = colors) + 
+  xlab('mass 28 peak area (mV/s)') + 
+  ylab(expression(delta^12*H[deviation])) + 
+  ggtitle('Uncorrected') + 
+  coord_cartesian(ylim = H_ylims) + 
+  guides(color=guide_legend(ncol=2))
 ```
 
 ```{r, echo = FALSE, message = FALSE}
 # Oxygen
 # fit a linearity correction --------------------------------------------------
-O_lin_fit <- data %>% 
+O_lin_fit <- oxygen %>% 
   filter(id2 %in% linearity_material) %>% 
   lm(formula = d18O_dev ~ area28, data = .)
 O_lin_sum <- summary(O_lin_fit)
 
+H_lin_fit <- hydrogen %>% 
+  filter(id2 %in% linearity_material) %>% 
+  lm(formula = d2H_dev ~ area2, data = .)
+H_lin_sum <- summary(H_lin_fit)
+
 if(oxygen_linearity) {
-  data <- data %>% 
-    mutate(d18O_measured = d18O_measured - predict(O_lin_fit, newdata = data)) %>% 
+  oxygen <- oxygen %>% 
+    mutate(d18O_measured = d18O_measured - predict(O_lin_fit, newdata = oxygen)) %>% 
     group_by(id2) %>% 
     mutate(d18O_dev = d18O_measured - mean(d18O_measured)) %>% 
+    ungroup()
+}
+
+if(hydrogen_linearity) {
+  hydrogen <- hydrogen %>% 
+    mutate(d2H_measured = d2H_measured - predict(H_lin_fit, newdata = hydrogen)) %>% 
+    group_by(id2) %>% 
+    mutate(d2H_dev = d2H_measured - mean(d2H_measured)) %>% 
     ungroup()
 }
 ```
 
 ```{r, echo = FALSE}
 # post calibration plot -------------------------------------------------------
-O_lin_corrected <- data %>% 
+O_lin_corrected <- oxygen %>% 
   filter(id2 %in% linearity_material) %>% 
   ggplot(mapping = aes(x = area28,
                        y = d18O_dev,
@@ -334,6 +407,23 @@ O_lin_corrected <- data %>%
   coord_cartesian(ylim = O_ylims) + 
   guides(color=guide_legend(ncol=2))
 
+H_lin_corrected <- hydrogen %>% 
+  filter(id2 %in% linearity_material) %>% 
+  ggplot(mapping = aes(x = area2,
+                       y = d2H_dev,
+                       color = id2)) + 
+  geom_point(size = 3) + 
+  theme(legend.position = 'top') + 
+  geom_smooth(method = 'lm',
+              se = FALSE, 
+              color = 'black') + 
+  scale_color_manual(values = colors) + 
+  xlab('mass 28 peak area (mV/s)') + 
+  ylab(expression(delta^2*H[deviation])) + 
+  ggtitle('Corrected') + 
+  coord_cartesian(ylim = O_ylims) + 
+  guides(color=guide_legend(ncol=2))
+
 ```
 
 ## Oxygen Linearity Correction
@@ -343,18 +433,28 @@ Mass linearity of oxygen isotope compositions  was monitored using the **`r past
 if(oxygen_linearity) {
   plot_grid(O_lin_uncorrected, O_lin_corrected)
 }
+
+if(hydrogen_linearity) {
+  plot_grid(H_lin_uncorrected, H_lin_corrected)
+}
 ```
 
 # Standardization {.tabset}
 
 ```{r, echo = FALSE}
 # add the standards 
-data <- data %>% full_join(standards %>% filter(id2 %in% standards_used), by = 'id2')
+oxygen <- oxygen %>% 
+  full_join(standards %>% 
+              filter(id2 %in% standards_used), by = 'id2')
+
+hydrogen <- hydrogen %>% 
+  full_join(standards %>% 
+              filter(id2 %in% standards_used), by = 'id2')
 ```
 
 ```{r, echo = FALSE, message=FALSE, fig.align='center'}
 # calibration plot
-O_scale <- data %>% 
+O_scale <- oxygen %>% 
   filter(id2 %in% standards_used) %>% 
   ggplot(mapping = aes(x = d18O_measured,
                        y = d18O_true,
@@ -367,36 +467,45 @@ O_scale <- data %>%
   ylab(expression(delta^18*O[accepted])) + 
   guides(color=guide_legend(ncol=2))
 
-plot_grid(O_scale)
+
+
+H_scale <- hydrogen %>% 
+  filter(id2 %in% standards_used) %>% 
+  ggplot(mapping = aes(x = d2H_measured,
+                       y = d2H_true,
+                       color = id2)) + 
+  geom_point(size = 3) + 
+  scale_color_manual(values = colors) +
+  geom_smooth(method = 'lm', aes(group = 1), color = 'black') + 
+  theme(legend.position = 'top') + 
+  xlab(expression(delta^2*H[measured])) + 
+  ylab(expression(delta^2*H[accepted])) + 
+  guides(color=guide_legend(ncol=2))
+
+plot_grid(O_scale, H_scale)
 ```
 
 ```{r, echo = FALSE}
-if(drop_outliers){
-  O_std_fit <- data %>%  
-    filter(id2 %in% standards_used) %>% 
-    group_by(id2) %>% 
-    mutate(z_score = z_score(d18O_measured)) %>% 
-    filter(z_score < 2) %>% 
-    ungroup() %>% 
-    lm(formula = d18O_true ~ d18O_measured, data = .)
-  
-  data <- data %>%
-    mutate(d18O_corrected = predict(O_std_fit, newdata = data))
-  
-} else {
-  O_std_fit <- data %>%  
+  O_std_fit <- oxygen %>%  
     filter(id2 %in% standards_used) %>% 
     lm(formula = d18O_true ~ d18O_measured, data = .)
   
-  data <- data %>% 
-    mutate(d18O_corrected = predict(O_std_fit, newdata = data))
+  oxygen <- oxygen %>% 
+    mutate(d18O_corrected = predict(O_std_fit, newdata = oxygen))
   
-}
+  
+  H_std_fit <- hydrogen %>%  
+    filter(id2 %in% standards_used) %>% 
+    lm(formula = d2H_true ~ d2H_measured, data = .)
+  
+  hydrogen <- hydrogen %>% 
+    mutate(d2H_corrected = predict(H_std_fit, newdata = hydrogen))
 
 ```
 
 ```{r, echo = FALSE}
 O_r2 <-O_std_fit %>% summary() %>% pluck('r.squared')
+H_r2 <-H_std_fit %>% summary() %>% pluck('r.squared')
 ```
 
 The isotope composition of unknowns samples were corrected to the international SMOW ($\delta^{18}O$) scale using the **`r paste(standards_used, collapse = ' and ')`** standard reference materials. Isotope compositions for standard reference materials are shown in the **Table 1**.

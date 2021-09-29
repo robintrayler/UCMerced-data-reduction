@@ -27,11 +27,12 @@ output:
   }
 ```
 
-```{r setup, include=FALSE}
+```{r setup, include=FALSE, warning = FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+options(scipen=999)
 ```
 
-The $\delta^{13}C$ and $\delta^{15}N$ values and elemental carbon and nitrogen contents  of all samples were measured using a **Costech 4010** Elemental Analyzer coupled with a **Delta V Plus Continuous Flow Isotope Ratio Mass Spectrometer** housed in the Stable Isotope Facility at the University of California, Merced. 
+The $\delta^{13}C$ and $\delta^{15}N$ values and elemental carbon and nitrogen contents of all samples were measured using a **Costech 4010** Elemental Analyzer coupled with a **Delta V Plus Continuous Flow Isotope Ratio Mass Spectrometer** housed in the Stable Isotope Ecosystems Laboratory at the University of California, Merced. 
 
 This report includes several files:
 
@@ -43,7 +44,7 @@ This report includes several files:
 If you would like the original Isodat 3.0 `.dxf` files please request by sending an email to stableisotopes@ucmerced.edu
 
 
-```{r, message = FALSE, echo = FALSE}
+```{r, message = FALSE, echo = FALSE, warning = FALSE}
 library(tidyverse)
 library(viridis)
 library(cowplot)
@@ -65,14 +66,14 @@ standards <- tribble(~id2, ~d13C_true, ~d15N_true, ~C_percent, ~N_percent,
                      'costech acetanilide', NA, NA, 71.09, 10.36) 
 
 colors <- viridis(n = length(standards$id2) + 1, end = 0.8, option = 'D')
-names(colors) <- c(standards$id2, TRUE)
+names(colors) <- c(standards$id2)
 ```
 
 # Setup {.tabset}
 ## File Path
 ```{r}
 # file path to the isodat csv file 
-file_path <- '~/Box Sync/Data Repository/EA/EA20210407.csv'
+file_path <- '~/Box Sync/Data Repository/EA/EA20210928.csv'
 ```
 
 ```{r, echo = FALSE}
@@ -89,6 +90,10 @@ if(!dir.exists(path = paste0('~/Box Sync/Data Repository/EA/Corrected/',current_
   dir.create(path = paste0(path = paste0('~/Box Sync/Data Repository/EA/Corrected/',current_year,'/', file_name)))
 }
 ```
+
+---
+title: "`r paste(file_name,' Report')`"
+---
 
 ## Analysis Parameters
 ### Select Sample Peaks
@@ -108,7 +113,7 @@ carbon_only   <- FALSE # should only carbon data be corrected?
 ### Set Rejection Criteria
 ```{r}
 # rejection criteria
-small_peaks <- 500 # warn about peaks smaller with an amplitude smaller than this
+small_peaks <- 1 # warn about peaks smaller with an amplitude smaller than this
 # should 2 sigma outlier standards be dropped from isotope corrections
 drop_outliers <- FALSE 
 ```
@@ -120,7 +125,7 @@ standards_used = c('USGS 41a', 'USGS 40')
 # material to use for linearity corrections
 linearity_material = c('USGS 40')
 # material to use for drift corrections
-drift_material = c('USGS 41a', 'costech acetanilide')
+drift_material = c('costech acetanilide', 'USGS 41a')
 # material to use for weight calculations
 weight_percent_material = c('USGS 40', 'USGS 41a', 'costech acetanilide')
 # in house 'check' materials for run quality
@@ -149,15 +154,6 @@ nitrogen_linearity <- TRUE
 carbon_linearity <- TRUE
 ```
 
-```{r, echo = FALSE}
-# set the document file name to the name of the data file read in
-file_name = tools::file_path_sans_ext(basename(file_path))
-```
-
----
-title: "`r paste(file_name,' Report')`"
----
-
 # Data Screening {.tabset}
 ```{r, message = FALSE, echo = FALSE}
 # read data
@@ -177,7 +173,8 @@ data <- raw_data %>%
          area44 = `Area 44`,
          d13C_measured = `d 13C/12C`,
          d15N_measured = `d 15N/14N`) %>% 
-  mutate(date_time = mdy(date) + hms(time))
+  mutate(date_time = mdy(date) + hms(time),
+         id2 = factor(id2))
 
 # add some dummy values if only running for nitrogen or carbon
 if(nitrogen_only) {
@@ -267,7 +264,7 @@ C_drift_uncorrected <- carbon %>%
   geom_smooth(method = carbon_drift_model,
               se = FALSE, 
               color = 'black') + 
-  scale_color_manual(values = colors) + 
+  scale_color_manual(values = colors, drop = TRUE, limits = force) +
   xlab('sequence number') + 
   ylab(expression(delta^13*C[deviation])) + 
   ggtitle('Uncorrected') + 
@@ -287,7 +284,7 @@ N_drift_uncorrected <- nitrogen %>%
   geom_smooth(method = nitrogen_drift_model,
               se = FALSE, 
               color = 'black') + 
-  scale_color_manual(values = colors) + 
+  scale_color_manual(values = colors, limits = force) + 
   xlab('sequence number') + 
   ylab(expression(delta^15*N[deviation])) + 
   ggtitle('Uncorrected') + 
@@ -350,7 +347,7 @@ if(carbon_drift) {
     geom_smooth(method = 'lm',
                 se = FALSE, 
                 color = 'black') + 
-    scale_color_manual(values = colors) + 
+    scale_color_manual(values = colors, limits = force) + 
     xlab('sequence number') + 
     ylab(expression(delta^13*C[deviation])) + 
     ggtitle('Corrected') + 
@@ -370,7 +367,7 @@ if(nitrogen_drift) {
     geom_smooth(method = 'lm',
                 se = FALSE, 
                 color = 'black') + 
-    scale_color_manual(values = colors) + 
+    scale_color_manual(values = colors, limits = force) + 
     xlab('sequence number') + 
     ylab(expression(delta^15*N[deviation])) + 
     ggtitle('Corrected') + 
@@ -424,7 +421,7 @@ C_lin_uncorrected <- carbon %>%
   geom_smooth(method = 'lm',
               se = FALSE, 
               color = 'black') + 
-  scale_color_manual(values = colors) + 
+  scale_color_manual(values = colors, limits = force) + 
   xlab('mass 44 peak area (mV/s)') + 
   ylab(expression(delta^13*C[deviation])) + 
   ggtitle('Uncorrected') + 
@@ -443,7 +440,7 @@ N_lin_uncorrected <- nitrogen %>%
   geom_smooth(method = 'lm',
               se = FALSE, 
               color = 'black') + 
-  scale_color_manual(values = colors) + 
+  scale_color_manual(values = colors, limits = force) + 
   xlab('mass 28 peak area (mV/s)') + 
   ylab(expression(delta^15*N[deviation])) + 
   ggtitle('Uncorrected') + 
@@ -495,7 +492,7 @@ C_lin_corrected <- carbon %>%
   geom_smooth(method = 'lm',
               se = FALSE, 
               color = 'black') + 
-  scale_color_manual(values = colors) + 
+  scale_color_manual(values = colors, limits = force) + 
   xlab('mass 44 peak area (mV/s)') + 
   ylab(expression(delta^13*C[deviation])) + 
   ggtitle('Corrected') + 
@@ -512,7 +509,7 @@ N_lin_corrected <- nitrogen %>%
   geom_smooth(method = 'lm',
               se = FALSE, 
               color = 'black') + 
-  scale_color_manual(values = colors) + 
+  scale_color_manual(values = colors, limits = force) + 
   xlab('mass 28 peak area (mV/s)') + 
   ylab(expression(delta^15*N[deviation])) + 
   ggtitle('Corrected') + 
@@ -547,7 +544,7 @@ C_scale <- carbon %>%
                        y = d13C_true,
                        color = id2)) + 
   geom_point(size = 3) + 
-  scale_color_manual(values = colors) +
+  scale_color_manual(values = colors, limits = force) +
   geom_smooth(method = 'lm', aes(group = 1), color = 'black') + 
   theme(legend.position = 'top') + 
   xlab(expression(delta^13*C[measured])) + 
@@ -560,7 +557,7 @@ N_scale <- nitrogen %>%
                        y = d15N_true,
                        color = id2)) + 
   geom_point(size = 3) + 
-  scale_color_manual(values = colors) +
+  scale_color_manual(values = colors, limits = force) +
   geom_smooth(method = 'lm', aes(group = 1), color = 'black') + 
   theme(legend.position = 'top') + 
   xlab(expression(delta^15*N[measured])) + 
@@ -635,7 +632,7 @@ C_weight <- carbon %>%
                        y = weight_carbon,
                        color = id2)) + 
   geom_point(size = 3) + 
-  scale_color_manual(values = colors) + 
+  scale_color_manual(values = colors, limits = force) + 
   theme(legend.position = 'top') + 
   geom_smooth(aes(group = 1), color = 'black', method = 'lm') + 
   xlab('mass 44 peak area (mV/s)') + 
@@ -648,7 +645,7 @@ N_weight <- nitrogen %>%
                        y = weight_nitrogen,
                        color = id2)) + 
   geom_point(size = 3) + 
-  scale_color_manual(values = colors) + 
+  scale_color_manual(values = colors, limits = force) + 
   theme(legend.position = 'top') + 
   geom_smooth(aes(group = 1), color = 'black', method = 'lm') + 
   xlab('mass 28 peak area (mV/s)') + 
@@ -738,7 +735,7 @@ if(carbon_only) {
 ```
 
 ```{r, echo = FALSE, message = FALSE}
-final_data %>% 
+summary_table <- final_data %>% 
   filter(sample %in% c(standards_used, check_material, drift_material, linearity_material)) %>% 
   group_by(sample) %>% 
   summarise(d15N_mean = mean(d15N_corrected),
@@ -749,8 +746,9 @@ final_data %>%
             N_wt_percent_sd = sd(N_wt_percent),
             C_wt_percent_mean = mean(C_wt_percent),
             C_wt_percent_sd = sd(C_wt_percent),
-            n = n()) %>% 
-  knitr::kable(digits = 2, 
+            n = n())
+
+summary_table %>% knitr::kable(digits = 2, 
                col.names = c('sample', 
                              '$\\delta^{15}N_{mean}$', 
                              '$\\delta^{15}N_{sd}$', 
@@ -784,13 +782,81 @@ final_data %>%
                total carbon and nitrogen content, and C/N ratios. C/N ratios are reported as wt/wt.')
 ```
 
-```{r, echo = FALSE, message = FALSE}
+## Methods
+### Example Methods Text
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+sep <- rep('±', length(standards_used))
+permil <- rep('‰', length(standards_used))
+equals <- rep('=', length(standards_used))
+
+names <- summary_table %>% 
+  filter(sample %in% standards_used) %>% 
+  pull(sample)
+
+n_samples <- summary_table %>% 
+  filter(sample %in% standards_used) %>% 
+  pull(n)
+
+d13C_sd <- summary_table %>% 
+  filter(sample %in% standards_used) %>% 
+  pull(d13C_sd) %>% 
+  round(2)
+
+d13C <- summary_table %>% 
+  filter(sample %in% standards_used) %>% 
+  pull(d13C_mean) %>% 
+  round(2)
+
+carbon_rep <- paste0(names, 
+                     equals, 
+                     d13C, 
+                     sep, 
+                     d13C_sd, 
+                     permil,
+                     '(n = ',
+                     n_samples, 
+                     ')')
+
+d15N_sd <- summary_table %>% 
+  filter(sample %in% standards_used) %>% 
+  pull(d15N_sd) %>% 
+  round(2)
+
+d15N <- summary_table %>% 
+  filter(sample %in% standards_used) %>% 
+  pull(d15N_mean) %>% 
+  round(2)
+
+nitrogen_rep <- paste0(names, 
+                     equals, 
+                     d15N, 
+                     sep, 
+                     d15N_sd, 
+                     permil,
+                     '(n = ',
+                     n_samples, 
+                     ')')
+```
+
+The $\delta^{13}C$ and $\delta^{15}N$ values and elemental carbon and nitrogen contents of all samples were measured in the Stable Isotope Ecosystem Laboratory at the University of California, Merced. Briefly, samples were weighed into `your tin capsule size here` tin capsules and combusted in a *Costech 4010 Elemental Analyzer* coupled with a *Delta V Plus Continuous Flow Isotope Ratio Mass Spectrometer*. Carbon and nitrogen isotope compositions were corrected for instrument drift, mass linearity and standardized to the international VPDB ($\delta^{13}C$) and AIR ($\delta^{15}N$) scales using the `r knitr::combine_words(standards_used)` standard reference materials. Mean isotope compositions for reference materials were `r knitr::combine_words(carbon_rep)` and `r knitr::combine_words(nitrogen_rep)` for $\delta^{13}C$ and $\delta^{15}N$ respectively. Elemental carbon and nitrogen contents were determined via linear regression of  $CO_2$ and $N_2$ sample gas peak areas against the known carbon and nitrogen contents of `r knitr::combine_words(weight_percent_material)`. All isotope compositions are expressed in standard delta notations where: 
+
+$$ 
+\delta = (\frac{R_{sample}}{R_{standard}} - 1) \times 1000
+$$
+
+### Note
+The text and numbers above refer *only* to data included in this report. If you wish to combine data from multiple reports, you **must** recalculate the mean and standard deviations included above. This text is procedurally generated so it may need to be edited for clarity and conciseness. 
+
+### Acknowledgements Example
+We thank Dr. Robin B. Trayler and the staff of the the Stable Isotope Ecosystems Laboratory of UC Merced for their assistance with stable isotope and elemental analysis.
+
+```{r, echo = FALSE, message = FALSE, warning=FALSE}
 final_data %>% 
   arrange(sample) %>% 
-  write_csv(path = paste0('~/Box Sync/Data Repository/EA/Corrected/',current_year,'/',file_name,'/',file_name,'_corrected.csv'))
+  write_csv(file = paste0('~/Box Sync/Data Repository/EA/Corrected/',current_year,'/',file_name,'/',file_name,'_corrected.csv'))
 
 raw_data %>% 
-  write_csv(path = paste0('~/Box Sync/Data Repository/EA/Corrected/',current_year,'/',file_name,'/',file_name, '_raw.csv'))
+  write_csv(file = paste0('~/Box Sync/Data Repository/EA/Corrected/',current_year,'/',file_name,'/',file_name, '_raw.csv'))
 
 file.copy(from = 'EA_tidy_reduction.Rmd', to = paste0('~/Box Sync/Data Repository/EA/Corrected/',current_year,'/',file_name,'/',file_name,'_code.Rmd'))
 ```

@@ -1,0 +1,78 @@
+---
+title: "Aric Mine Carbonate Contents"
+author: "Robin B. Trayler"
+date: "4/22/2021"
+output: pdf_document
+---
+
+# Carbonate Content Determination
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+theme_set(theme_minimal())
+```
+
+```{r, echo = FALSE, message=FALSE}
+# define references
+reference <- tibble(sample = 'CM',
+                    CO3_wt_pt = 60)
+
+# load and clean up the data
+data <- read_csv(file = '~/Box Sync/Data Repository/Gasbench/GB20210421.csv') %>%
+  select(identifier_1 = `Identifier 1`, 
+         sample = `Identifier 2`,
+         amount = Preparation,
+         area44 = `Area 44`,
+         amp44 = `Ampl. 44`,
+         peak_nr = `Peak Nr.`) %>% 
+  filter(peak_nr == 10) %>% 
+  mutate(type = case_when(sample == 'CM' ~ 'reference', 
+                          TRUE ~ 'unknown')) %>% 
+  left_join( reference, by = 'sample') %>% 
+  mutate(CO3_content = amount * CO3_wt_pt / 100)
+
+```
+
+```{r, echo = FALSE, message=FALSE}
+# plot the calibration curve
+data %>% filter(type == 'reference') %>% 
+  ggplot(mapping = aes(x = amp44, 
+                       y = CO3_content,
+                       color = type)) + 
+  geom_point(size = 2) + 
+  geom_smooth(method = 'lm') + 
+  xlab('mass 44 peak area (mV/s)') + 
+  ylab('carbonate content (mg)')
+
+data %>% filter(type == 'reference') %>% 
+  ggplot(mapping = aes(x = area44, 
+                       y = CO3_content,
+                       color = type)) + 
+  geom_point(size = 2) + 
+  geom_smooth(method = 'lm') + 
+  xlab('mass 44 peak area (mV/s)') + 
+  ylab('carbonate content (mg)')
+```
+
+
+```{r, echo = FALSE}
+# extract coefficients
+fit <- data %>% 
+  filter(type == 'reference') %>% 
+  lm(CO3_content ~ area44, data = .) %>% 
+  coef()
+
+# apply the calibration
+data <- data %>% 
+  mutate(CO3_wt_percent = ((fit[1] + area44 * fit[2]) / amount * 100) %>% round(1))
+```
+
+# Table of Carbonate Contents
+```{r, echo = FALSE}
+# add a table of carbonate contents 
+data %>% filter(type == 'unknown') %>% 
+  select(sample, area44, CO3_wt_percent) %>% 
+  knitr::kable(col.names = c('sample',
+                             'mass 44 peak area (mV/s)',
+                             '$CO_{3} \\%$'))
+```
