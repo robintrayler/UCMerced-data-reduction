@@ -4,6 +4,7 @@ author: "Robin B. Trayler"
 date: "`r format(Sys.time(), '%B, %d, %Y')`"
 output:
   html_document:
+    # theme: cosmo
     toc: yes
     toc_depth: 2
     toc_float: yes
@@ -75,7 +76,7 @@ names(colors) <- c(standards$id2, TRUE)
 ## File Path
 ```{r}
 # file path to the isodat csv file 
-file_path <- '~/Box Sync/Data Repository/TCEA/TCEA20210924.csv'
+file_path <- '~/Box Sync/Data Repository/TCEA/TCEA20211031.csv'
 ```
 
 ## Analysis Parameters
@@ -208,7 +209,7 @@ O_drift_uncorrected <- data %>%
   geom_smooth(method = oxygen_drift_model,
               se = FALSE, 
               color = 'black') + 
-  scale_color_manual(values = colors) + 
+  scale_color_manual(values = colors, limits = force) + 
   xlab('sequence number') + 
   ylab(expression(delta^18*O[deviation])) + 
   ggtitle('Uncorrected') + 
@@ -250,7 +251,7 @@ if(oxygen_drift){
     geom_smooth(method = 'lm',
                 se = FALSE, 
                 color = 'black') + 
-    scale_color_manual(values = colors) + 
+    scale_color_manual(values = colors, limits = force) + 
     xlab('sequence number') + 
     ylab(expression(delta^18*O[deviation])) + 
     ggtitle('Corrected') + 
@@ -290,7 +291,7 @@ O_lin_uncorrected <- data %>%
   geom_smooth(method = 'lm',
               se = FALSE, 
               color = 'black') + 
-  scale_color_manual(values = colors) + 
+  scale_color_manual(values = colors, limits = force) + 
   xlab('mass 28 peak area (mV/s)') + 
   ylab(expression(delta^18*O[deviation])) + 
   ggtitle('Uncorrected') + 
@@ -327,7 +328,7 @@ O_lin_corrected <- data %>%
   geom_smooth(method = 'lm',
               se = FALSE, 
               color = 'black') + 
-  scale_color_manual(values = colors) + 
+  scale_color_manual(values = colors, limits = force) + 
   xlab('mass 28 peak area (mV/s)') + 
   ylab(expression(delta^18*O[deviation])) + 
   ggtitle('Corrected') + 
@@ -360,12 +361,13 @@ O_scale <- data %>%
                        y = d18O_true,
                        color = id2)) + 
   geom_point(size = 3) + 
-  scale_color_manual(values = colors) +
+  scale_color_manual(values = colors, limits = force) +
   geom_smooth(method = 'lm', aes(group = 1), color = 'black') + 
   theme(legend.position = 'top') + 
   xlab(expression(delta^18*O[measured])) + 
   ylab(expression(delta^18*O[accepted])) + 
-  guides(color=guide_legend(ncol=2))
+  guides(color=guide_legend(ncol=2)) + 
+  coord_fixed()
 
 plot_grid(O_scale)
 ```
@@ -412,7 +414,6 @@ standards %>%
 ```
 
 # Final Data {.tabset}
-
 ```{r, echo = FALSE, message = FALSE}
 
 final_data <- data %>% 
@@ -423,6 +424,7 @@ final_data <- data %>%
          `Area 30`= area30,
          d18O_corrected)
 ```
+
 ## Summary 
 ```{r, echo = FALSE, message = FALSE}
 final_data %>% 
