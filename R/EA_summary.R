@@ -80,8 +80,8 @@ storage %>%  ggplot(mapping = aes(x = date,
                                   y = d13C_corrected,
                                   color = sample)) + 
   geom_point() + 
-  theme(legend.position = 'top')  + geom_smooth() + 
-  ylim(c(-30, -17.5))
+  theme(legend.position = 'top')  + geom_smooth(method = 'lm', se = FALSE, color = 'black') + 
+  facet_wrap(~sample, scales = 'free_y')
 
 
 
@@ -97,5 +97,11 @@ storage %>%
             N__sd = sd(N_wt_percent, na.rm  = TRUE),
             n = n()) 
 
-
+storage %>% 
+  group_by(sample) %>% 
+  mutate(d13C_dev = d13C_corrected - mean(d13C_corrected),
+         d15N_dev = d15N_corrected - mean(d15N_corrected)) %>% 
+  ungroup() %>% 
+  summarize(d13C_sd = sd(d13C_dev),
+            d15N_sd = sd(d15N_dev))
 
