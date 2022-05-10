@@ -76,7 +76,7 @@ names(colors) <- c(standards$id2, TRUE)
 ## File Path
 ```{r}
 # file path to the isodat csv file 
-file_path <- '~/Box Sync/Data Repository/TCEA/TCEA20211123.csv'
+file_path <- '~/Box Sync/Data Repository/TCEA/TCEA20220429.csv'
 ```
 
 ## Analysis Parameters
@@ -85,7 +85,7 @@ file_path <- '~/Box Sync/Data Repository/TCEA/TCEA20211123.csv'
 # Which peak is the CO analyte?
 oxygen_peak <- 3
 # How many total peaks should there be?
-total_peaks <- 5
+total_peaks <- 1
 ```
 
 ### Set Rejection Criteria
@@ -460,10 +460,10 @@ final_data %>%
 
 final_data %>% 
   arrange(sample) %>% 
-  write_csv(path = paste0('~/Box Sync/Data Repository/TCEA/Corrected/',current_year,'/',file_name,'/',file_name,'_corrected.csv'))
+  write_csv(file = paste0('~/Box Sync/Data Repository/TCEA/Corrected/',current_year,'/',file_name,'/',file_name,'_corrected.csv'))
 
 raw_data %>% 
-  write_csv(path = paste0('~/Box Sync/Data Repository/TCEA/Corrected/',current_year,'/',file_name,'/',file_name,'_raw.csv'))
+  write_csv(file = paste0('~/Box Sync/Data Repository/TCEA/Corrected/',current_year,'/',file_name,'/',file_name,'_raw.csv'))
 
 
 file.copy(from = 'TCEA_tidy_reduction.Rmd', 

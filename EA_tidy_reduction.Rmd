@@ -32,17 +32,16 @@ knitr::opts_chunk$set(echo = TRUE)
 options(scipen=999)
 ```
 
-The $\delta^{13}C$ and $\delta^{15}N$ values and elemental carbon and nitrogen contents of all samples were measured using a **Costech 4010** Elemental Analyzer coupled with a **Delta V Plus Continuous Flow Isotope Ratio Mass Spectrometer** housed in the Stable Isotope Ecosystems Laboratory at the University of California, Merced. 
+The $\delta^{13}C$ and $\delta^{15}N$ values and elemental carbon and nitrogen contents of all samples were measured using a **Costech 4010** Elemental Analyzer coupled with a **Delta V Plus Continuous Flow Isotope Ratio Mass Spectrometer** housed in the Stable Isotope Ecosystems Laboratory at the University of California, Merced.
 
 This report includes several files:
 
-1) A `.html` or `.pdf` report summarizing all data corrections and instrument reproducibility
-2) A `.csv` file with the corrected data
-3) A `.csv` file with the uncorrected data 
-4) A `.Rmd` (R Markdown) document containing the **R** code used to correct the data
+1)  A `.html` or `.pdf` report summarizing all data corrections and instrument reproducibility
+2)  A `.csv` file with the corrected data
+3)  A `.csv` file with the uncorrected data
+4)  A `.Rmd` (R Markdown) document containing the **R** code used to correct the data
 
-If you would like the original Isodat 3.0 `.dxf` files please request by sending an email to stableisotopes@ucmerced.edu
-
+If you would like the original Isodat 3.0 `.dxf` files please request by sending an email to [stableisotopes\@ucmerced.edu](mailto:stableisotopes@ucmerced.edu){.email}
 
 ```{r, message = FALSE, echo = FALSE, warning = FALSE}
 library(tidyverse)
@@ -59,21 +58,23 @@ z_score <- function(x) {
 ```
 
 ```{r, echo = FALSE, message = FALSE}
-# standards <- read_csv(file = './data/EA_standards.csv')
 standards <- tribble(~id2, ~d13C_true, ~d15N_true, ~C_percent, ~N_percent,
                      'USGS 40', -26.39, -4.52, 40.8, 9.52,
                      'USGS 41a', 36.55, 47.55, 40.8, 9.52,
                      'costech acetanilide', NA, NA, 71.09, 10.36) 
 
+# set consistent colors for standards 
 colors <- viridis(n = length(standards$id2) + 1, end = 0.8, option = 'D')
 names(colors) <- c(standards$id2)
 ```
 
 # Setup {.tabset}
+
 ## File Path
+
 ```{r}
 # file path to the isodat csv file 
-file_path <- '~/Box Sync/Data Repository/EA/EA20211129.csv'
+file_path <- '~/Box Sync/Data Repository/EA/EA20220504.csv'
 ```
 
 ```{r, echo = FALSE}
@@ -96,7 +97,9 @@ title: "`r paste(file_name,' Report')`"
 ---
 
 ## Analysis Parameters
+
 ### Select Sample Peaks
+
 ```{r}
 # Which peak is the N2 analyte?
 nitrogen_peak <- 3
@@ -111,6 +114,7 @@ carbon_only   <- FALSE # should only carbon data be corrected?
 ```
 
 ### Set Rejection Criteria
+
 ```{r}
 # rejection criteria
 small_peaks <- 500 # warn about peaks smaller with an amplitude smaller than this
@@ -119,21 +123,24 @@ drop_outliers <- FALSE
 ```
 
 ### Select Correction Standards
+
 ```{r}
 # standards used in run
 standards_used = c('USGS 41a', 'USGS 40')
 # material to use for linearity corrections
 linearity_material = c('USGS 40')
 # material to use for drift corrections
-drift_material = c('costech acetanilide', 'USGS 41a')
+drift_material = c('USGS 41a', 'costech acetanilide')
 # material to use for weight calculations
 weight_percent_material = c('USGS 40', 'USGS 41a', 'costech acetanilide')
 # in house 'check' materials for run quality
-check_material = c('EA sed', 'MB squid', 'peach', 'costech acetanilide', 'EA gelatin', 'Mb squid')
+check_material = c('EA sed', 'MB squid', 'peach', 'EA gelatin', 'Mb squid', 'costech acetanilide')
 ```
 
 ## Drift and Linearity Model Specification
+
 ### Instrument Drift
+
 ```{r}
 # should a drift correction be applied to nitrogen
 nitrogen_drift <- TRUE
@@ -147,6 +154,7 @@ carbon_drift_model <- 'lm'
 ```
 
 ### Mass Linearity
+
 ```{r}
 # should a linearity correction be applied?
 # mass linearity corrections use a linear model
@@ -155,6 +163,7 @@ carbon_linearity <- TRUE
 ```
 
 # Data Screening {.tabset}
+
 ```{r, message = FALSE, echo = FALSE}
 # read data
 raw_data <- read_csv(file = file_path)
@@ -215,15 +224,18 @@ nitrogen <- data %>%
 ```
 
 ## Check for Missing Peaks
+
 ```{r, echo = FALSE, message = FALSE}
 # check for missing peaks
 missing <- data %>% 
   group_by(id1) %>% 
   summarize(n = !(n() == total_peaks))
 ```
-Sample(s) with an Identifier 1 of __`r missing$id1[missing$n]`__ have fewer peaks than expected. Please check the raw data.
+
+Sample(s) with an Identifier 1 of **`r missing$id1[missing$n]`** have fewer peaks than expected. Please check the raw data.
 
 ## Check for Small Peaks
+
 ```{r, echo = FALSE}
 small_N <- data %>% 
   filter(peak_nr %in% nitrogen_peak & amp28 < small_peaks) %>% 
@@ -234,11 +246,12 @@ small_C <- data %>%
   select(id1)
 ```
 
-Sample(s) with an Identifier 1 of __`r small_N$id1`__ have a mass 28 (nitrogen) amplitude smaller than __`r small_peaks`__ mV. Data from these samples may be unreliable.
+Sample(s) with an Identifier 1 of **`r small_N$id1`** have a mass 28 (nitrogen) amplitude smaller than **`r small_peaks`** mV. Data from these samples may be unreliable.
 
-Sample(s) with an Identifier 1 of __`r small_C$id1`__ have a mass 44 (carbon) amplitude smaller than __`r small_peaks`__ mV. Data from these samples may be unreliable.
+Sample(s) with an Identifier 1 of **`r small_C$id1`** have a mass 44 (carbon) amplitude smaller than **`r small_peaks`** mV. Data from these samples may be unreliable.
 
 # Drift Correction {.tabset}
+
 ```{r, echo=FALSE}
 # figure out axis limits ------------------------------------------------------
 C_ylims <- carbon %>% 
@@ -291,7 +304,6 @@ N_drift_uncorrected <- nitrogen %>%
   coord_cartesian(ylim = N_ylims) + 
   guides(color=guide_legend(ncol=2))
 ```
-
 
 ```{r, message = FALSE, echo = FALSE}
 # fit a Drift Correction ------------------------------------------------------
@@ -377,6 +389,7 @@ if(nitrogen_drift) {
 ```
 
 ## Nitrogen Drift Correction
+
 Nitrogen isotope compositional drift over the period of analysis was monitored using the **`r paste(drift_material, collapse = ' and ')`** reference material(s). Since a drift correction was `r ifelse(carbon_drift,' ','not')` requested, A **`r if(nitrogen_drift_model == 'lm') {paste('linear')} else if(nitrogen_drift_model == 'loess') {paste('loess')}`** model was `r ifelse(nitrogen_drift,' ','not')` subtracted from the raw data.
 
 ```{r, echo = FALSE, message = FALSE, fig.align='center', warning = FALSE}
@@ -385,8 +398,8 @@ if(nitrogen_drift) {
 }
 ```
 
-
 ## Carbon Drift Correction
+
 Carbon isotope compositional drift over the period of analysis was monitored using the **`r paste(drift_material, collapse = ' and ')`** reference material(s). Since a drift correction was `r ifelse(carbon_drift,' ','not')` requested, A **`r if(carbon_drift_model == 'lm') {paste('linear')} else if(carbon_drift_model == 'loess') {paste('loess')}`** model was `r ifelse(carbon_drift,' ','not')` subtracted from the raw data.
 
 ```{r, echo = FALSE, message = FALSE, fig.align='center', warning = FALSE}
@@ -396,6 +409,7 @@ if(carbon_drift) {
 ```
 
 # Linearity Corrections {.tabset}
+
 ```{r, echo = FALSE}
 N_ylims <- nitrogen %>% 
   filter(id2 %in% linearity_material) %>% 
@@ -518,7 +532,8 @@ N_lin_corrected <- nitrogen %>%
 ```
 
 ## Nitrogen Linearity Correction
-Mass linearity of nitrogen isotope compositions  was monitored using the **`r paste(linearity_material, collapse = ' and ')`** reference material(s). Since a linearity correction was `r ifelse(nitrogen_linearity,' ','not')` requested, A linear trend with an $r^2$ of **`r round(N_lin_sum$r.squared, 2)`** was `r ifelse(nitrogen_linearity,' ','not')` subtracted from the raw data.
+
+Mass linearity of nitrogen isotope compositions was monitored using the **`r paste(linearity_material, collapse = ' and ')`** reference material(s). Since a linearity correction was `r ifelse(nitrogen_linearity,' ','not')` requested, A linear trend with an $r^2$ of **`r round(N_lin_sum$r.squared, 2)`** was `r ifelse(nitrogen_linearity,' ','not')` subtracted from the raw data.
 
 ```{r, echo = FALSE, message = FALSE, fig.align='center'}
 if(nitrogen_linearity) {
@@ -527,7 +542,8 @@ if(nitrogen_linearity) {
 ```
 
 ## Carbon Linearity Correction
-Mass linearity of carbon isotope compositions  was monitored using the **`r paste(linearity_material, collapse = ' and ')`** reference material(s). Since a linearity correction was `r ifelse(carbon_linearity,' ','not')` requested, A linear trend with an $r^2$ of **`r round(C_lin_sum$r.squared, 2)`** was `r ifelse(carbon_linearity,' ','not')` subtracted from the raw data.
+
+Mass linearity of carbon isotope compositions was monitored using the **`r paste(linearity_material, collapse = ' and ')`** reference material(s). Since a linearity correction was `r ifelse(carbon_linearity,' ','not')` requested, A linear trend with an $r^2$ of **`r round(C_lin_sum$r.squared, 2)`** was `r ifelse(carbon_linearity,' ','not')` subtracted from the raw data.
 
 ```{r, echo = FALSE, message = FALSE, fig.align='center'}
 if(carbon_linearity) {
@@ -536,6 +552,7 @@ if(carbon_linearity) {
 ```
 
 # Standardization {.tabset}
+
 ```{r, echo = FALSE, message=FALSE, fig.align='center'}
 # calibration plot
 C_scale <- carbon %>% 
@@ -625,6 +642,7 @@ standards %>%
 ```
 
 # Elemental Content {.tabset}
+
 ```{r echo=FALSE, fig.align='center', message=FALSE}
 C_weight <- carbon %>% 
   filter(id2 %in% weight_percent_material) %>% 
@@ -668,7 +686,8 @@ N_wt_fit <- nitrogen %>%
 nitrogen <- nitrogen %>% 
   mutate(N_wt_percent = predict(N_wt_fit, newdata = nitrogen) / weight * 100)
 ```
-Total carbon and nitrogen contents were calculated using the **`r paste(weight_percent_material, collapse = ' and ')`** reference materials. Certified carbon and nitrogen contents for these reference materials are shown in the **Table 2**. 
+
+Total carbon and nitrogen contents were calculated using the **`r paste(weight_percent_material, collapse = ' and ')`** reference materials. Certified carbon and nitrogen contents for these reference materials are shown in the **Table 2**.
 
 ```{r, echo = FALSE}
 standards %>% 
@@ -683,7 +702,8 @@ standards %>%
 ```
 
 # Final Data {.tabset}
-## Summary 
+
+## Summary
 
 ```{r, echo = FALSE, message = FALSE}
 carbon <- carbon %>% 
@@ -764,6 +784,7 @@ summary_table %>% knitr::kable(digits = 2,
 ```
 
 ## Full Data Table
+
 ```{r, echo = FALSE}
 final_data %>%
   arrange(sample) %>%
@@ -783,7 +804,9 @@ final_data %>%
 ```
 
 ## Methods
+
 ### Example Methods Text
+
 ```{r, echo=FALSE, message=FALSE, warning=FALSE}
 sep <- rep('±', length(standards_used))
 permil <- rep('‰', length(standards_used))
@@ -838,16 +861,18 @@ nitrogen_rep <- paste0(names,
                      ')')
 ```
 
-The $\delta^{13}C$ and $\delta^{15}N$ values and elemental carbon and nitrogen contents of all samples were measured in the Stable Isotope Ecosystem Laboratory at the University of California, Merced. Briefly, samples were weighed into `your tin capsule size here` tin capsules and combusted in a *Costech 4010 Elemental Analyzer* coupled with a *Delta V Plus Continuous Flow Isotope Ratio Mass Spectrometer*. Carbon and nitrogen isotope compositions were corrected for instrument drift, mass linearity and standardized to the international VPDB ($\delta^{13}C$) and AIR ($\delta^{15}N$) scales using the `r knitr::combine_words(standards_used)` standard reference materials. Mean isotope compositions for reference materials were `r knitr::combine_words(carbon_rep)` and `r knitr::combine_words(nitrogen_rep)` for $\delta^{13}C$ and $\delta^{15}N$ respectively. Elemental carbon and nitrogen contents were determined via linear regression of  $CO_2$ and $N_2$ sample gas peak areas against the known carbon and nitrogen contents of `r knitr::combine_words(weight_percent_material)`. All isotope compositions are expressed in standard delta notations where: 
+The $\delta^{13}C$ and $\delta^{15}N$ values and elemental carbon and nitrogen contents of all samples were measured in the Stable Isotope Ecosystem Laboratory at the University of California, Merced. Briefly, samples were weighed into `your tin capsule size here` tin capsules and combusted in a *Costech 4010 Elemental Analyzer* coupled with a *Delta V Plus Continuous Flow Isotope Ratio Mass Spectrometer*. Carbon and nitrogen isotope compositions were corrected for instrument drift, mass linearity and standardized to the international VPDB ($\delta^{13}C$) and AIR ($\delta^{15}N$) scales using the `r knitr::combine_words(standards_used)` standard reference materials. Mean isotope compositions for reference materials were `r knitr::combine_words(carbon_rep)` and `r knitr::combine_words(nitrogen_rep)` for $\delta^{13}C$ and $\delta^{15}N$ respectively. Elemental carbon and nitrogen contents were determined via linear regression of $CO_2$ and $N_2$ sample gas peak areas against the known carbon and nitrogen contents of `r knitr::combine_words(weight_percent_material)`. All isotope compositions are expressed in standard delta notations where:
 
 $$ 
 \delta = (\frac{R_{sample}}{R_{standard}} - 1) \times 1000
 $$
 
 ### Note
-The text and numbers above refer *only* to data included in this report. If you wish to combine data from multiple reports, you **must** recalculate the mean and standard deviations included above. This text is procedurally generated so it may need to be edited for clarity and conciseness. 
+
+The text and numbers above refer *only* to data included in this report. If you wish to combine data from multiple reports, you **must** recalculate the mean and standard deviations included above. This text is procedurally generated so it may need to be edited for clarity and conciseness.
 
 ### Acknowledgements Example
+
 We thank Dr. [Robin B. Trayler](https://www.youtube.com/watch?v=dQw4w9WgXcQ) and the staff of the the Stable Isotope Ecosystems Laboratory of UC Merced for their assistance with stable isotope and elemental analysis.
 
 ```{r, echo = FALSE, message = FALSE, warning=FALSE}

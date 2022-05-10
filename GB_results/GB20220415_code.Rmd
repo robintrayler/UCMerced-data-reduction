@@ -62,7 +62,7 @@ names(colors) <- c(standards$id2, TRUE)
 
 ```{r}
 # file path to the isodat csv file 
-file_path <- '~/Box Sync/Data Repository/Gasbench/GB20220505.csv'
+file_path <- '~/Box Sync/Data Repository/Gasbench/GB20220415.csv'
 ```
 
 ```{r, echo = FALSE}
@@ -98,19 +98,19 @@ drop_outliers <- FALSE
 
 ```{r}
 # standards used in run
-# standards_used = c('NBS 18', 'CM', 'USGS 44')
-standards_used = c('alpha low', 'alpha high')
+standards_used = c('NBS 18', 'CM', 'USGS 44')
+# standards_used = c('alpha low', 'alpha high')
 # material to use for linearity corrections
-# linearity_material = c('NBS 18', 'CM')
-linearity_material = c('alpha low', 'alpha high')
+linearity_material = c('NBS 18', 'CM')
+# linearity_material = c('alpha low', 'alpha high')
 # material to use for drift corrections
-# drift_material = c('NBS 18', 'CM')
-drift_material = c('alpha low', 'alpha high')
+drift_material = c('NBS 18', 'CM')
+# drift_material = c('alpha low', 'alpha high')
 # material to use for weight calculations
-# weight_percent_material = c('NBS 18', 'USGS 44', 'CM')
+weight_percent_material = c('NBS 18', 'USGS 44', 'CM')
 # in house 'check' materials for run quality
-# check_material = c('NIST 120C')
-check_material = c('alpha mid')
+check_material = c('NIST 120C')
+# check_material = c('alpha mid')
 ```
 
 ## Drift and Linearity Model Specification

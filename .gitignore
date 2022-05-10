@@ -7,3 +7,5 @@ EA_results/.DS_Store
 *.pdf
 *.html
 .DS_Store
+*.csv
+*.png

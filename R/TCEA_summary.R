@@ -10,13 +10,13 @@ zscore <- function(x){
 }
 
 # define file path ------------------------------------------------------------
-file_path <- "~/Box Sync/Data Repository/TCEA/Corrected/"
+file_path <- "~/Box Sync/Data Repository/TCEA/Corrected/2022"
 
 # reference materials to check ------------------------------------------------
 standards <- tribble(~sample,      ~d18O_corrected,
-                     # 'USGS 80',   13.1, 
-                     # 'USGS 81',   35.4,
-                     'IAEA 601',  23.3)
+                     'USGS 80',   13.1,
+                     'USGS 81',   35.4)
+                     # 'IAEA 601',  23.3)
                      # 'alfa asar',   NA)
 
 

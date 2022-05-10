@@ -70,7 +70,7 @@ names(colors) <- c(standards$id2, TRUE)
 ## File Path
 ```{r}
 # file path to the isodat csv file 
-file_path <- '~/Box Sync/Data Repository/TCEA/TCEA20211123.csv'
+file_path <- '~/Box Sync/Data Repository/TCEA/TCEA20220321.csv'
 ```
 
 ## Analysis Parameters
@@ -109,6 +109,8 @@ hydrogen_drift <- TRUE
 # should a linearity correction be applied?
 # mass linearity corrections use a linear model
 oxygen_linearity <- TRUE
+oxygen_drift_model = 'lm'
+hydrogen_drift_model = 'lm'
 hydrogen_linearity <- TRUE
 ```
 
