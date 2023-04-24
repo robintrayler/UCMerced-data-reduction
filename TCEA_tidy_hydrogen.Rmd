@@ -15,23 +15,23 @@ output:
 
 ```{css, echo=FALSE}
 .block-format {
-  background-color: lightgrey2;
-  border: 2px solid black;
-  font-weight: bold;
+background-color: lightgrey2;
+border: 2px solid black;
+font-weight: bold;
 }
 
 /* Whole document: */
-  body{
-    font-family: Helvetica;
-    font-size: 12pt;
-  }
+body{
+font-family: Helvetica;
+font-size: 12pt;
+}
 ```
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-The $\delta^{18}O$ values  of all samples were measured using a **ThermoFisher TC/EA** coupled with a **Delta V Plus Continuous Flow Isotope Ratio Mass Spectrometer** housed in the Stable Isotope Facility at the University of California, Merced. 
+The $\delta^{2}H$ and $\delta^{18}O$ values  of all samples were measured using a **ThermoFisher TC/EA** coupled with a **Delta V Plus Continuous Flow Isotope Ratio Mass Spectrometer** housed in the Stable Isotope Facility at the University of California, Merced. 
 
 This report includes several files:
 
@@ -60,7 +60,8 @@ standards <- tribble(~id2,      ~d18O_true, ~d2H_true, ~O_percent, ~H_percent,
                      'KHS',       20.3,      -35.3,        NA,         NA,
                      'EA Ag3PO4', 21.7,        NA,        15.29,       0,
                      'USGS 54',  17.79,       -150.4,       NA,         NA,
-                     'USGS 55',  19.12,        -28.2,       NA,         NA)
+                     'USGS 55',  19.12,        -28.2,       NA,         NA,
+                     'EA Spruce', 23.87,          NA,      40.18,        6.29)
 # the +1 gets rid of yellow
 colors <- viridis(n = length(standards$id2) + 1)
 names(colors) <- c(standards$id2, TRUE)
@@ -70,7 +71,7 @@ names(colors) <- c(standards$id2, TRUE)
 ## File Path
 ```{r}
 # file path to the isodat csv file 
-file_path <- '~/Box Sync/Data Repository/TCEA/TCEA20220321.csv'
+file_path <- '~/Box Sync/Data Repository/TCEA/TCEA20230329.csv'
 ```
 
 ## Analysis Parameters
@@ -87,13 +88,16 @@ total_peaks <- 6
 ### Select Correction Standards
 ```{r}
 # standards used in run
-standards_used = c('USGS 54', 'USGS 55')
+# standards_used = c('USGS 54', 'USGS 55', 'EA Spruce')
+standards_used = c('CBS', 'KHS')
 # material to use for linearity corrections
 linearity_material =  c('IAEA 601')
 # material to use for drift corrections
-drift_material = c('USGS 54', 'USGS 55')
+drift_material = c('CBS', 'KHS')
 # in house 'check' materials for run quality
-check_material = c('EA spruce')
+check_material = c('IAEA 601')
+
+weight_percent_material = c('IAEA 601')
 ```
 
 ## Drift and Linearity Model Specification
@@ -117,16 +121,16 @@ hydrogen_linearity <- TRUE
 ```{r, echo = FALSE}
 # set the document file name to the name of the data file read in
 file_name = tools::file_path_sans_ext(basename(file_path))
-# current_year <- format(Sys.Date(), '%Y')
-# 
-# #Check if directories exists and create if they doesn't
-# if(!dir.exists(path = paste0('~/Box Sync/Data Repository/TCEA/Corrected/',current_year))) {
-#   dir.create(path = paste0('~/Box Sync/Data Repository/TCEA/Corrected/',current_year))
-# }
-# 
-# if(!dir.exists(path = paste0('~/Box Sync/Data Repository/TCEA/Corrected/',current_year,'/',file_name))) {
-#   dir.create(path = paste0(path = paste0('~/Box Sync/Data Repository/TCEA/Corrected/',current_year,'/',file_name)))
-# }
+current_year <- format(Sys.Date(), '%Y')
+
+#Check if directories exists and create if they doesn't
+if(!dir.exists(path = paste0('~/Box Sync/Data Repository/TCEA/Corrected/',current_year))) {
+  dir.create(path = paste0('~/Box Sync/Data Repository/TCEA/Corrected/',current_year))
+}
+
+if(!dir.exists(path = paste0('~/Box Sync/Data Repository/TCEA/Corrected/',current_year,'/',file_name))) {
+  dir.create(path = paste0(path = paste0('~/Box Sync/Data Repository/TCEA/Corrected/',current_year,'/',file_name)))
+}
 ```
 ---
 title: "`r paste(file_name,' Report')`"
@@ -146,20 +150,42 @@ data <- raw_data %>%
          area28 = `Area 28`,
          area2  = `Area 2`,
          d2H_measured = `d 2H/1H`,
-         d18O_measured = `d 18O/16O`)
+         d18O_measured = `d 18O/16O`) |> 
+  left_join(standards, by = 'id2')
 ```
 
 ```{r, echo = FALSE}
 # seperate out the data
-oxygen <- data %>% filter(peak_nr == oxygen_peak) %>% 
+oxygen <- data %>% 
+  select(id1,
+         id2,
+         peak_nr,
+         seq_nr,
+         weight,
+         area28,
+         d18O_measured,
+         O_percent) |> 
+  filter(peak_nr == oxygen_peak) %>% 
   group_by(id2) %>% 
   mutate(d18O_dev = d18O_measured - mean(d18O_measured)) %>% 
-  ungroup()
+  ungroup() |> 
+  mutate(weight_oxygen = O_percent * weight / 100)
 
-hydrogen <- data %>% filter(peak_nr == hydrogen_peak) %>% 
-  group_by(id2) %>% 
-  mutate(d2H_dev = d2H_measured - mean(d2H_measured)) %>% 
-  ungroup()
+
+hydrogen <- data |>  
+  select(id1,
+         id2,
+         peak_nr,
+         seq_nr,
+         weight,
+         area2,
+         d2H_measured,
+         H_percent) |> 
+  filter(peak_nr == hydrogen_peak) |>  
+  group_by(id2) |>  
+  mutate(d2H_dev = d2H_measured - mean(d2H_measured)) |>  
+  ungroup() |> 
+  mutate(weight_hydrogen = H_percent * weight / 100)
 ```
 
 # Drift Correction {.tabset}
@@ -189,7 +215,7 @@ O_drift_uncorrected <- oxygen %>%
   geom_smooth(method = 'lm',
               se = FALSE, 
               color = 'black') + 
-  scale_color_manual(values = colors) + 
+  scale_color_manual(values = colors, limits = force) + 
   xlab('sequence number') + 
   ylab(expression(delta^18*O[deviation])) + 
   ggtitle('Uncorrected') + 
@@ -207,7 +233,7 @@ H_drift_uncorrected <- hydrogen %>%
   geom_smooth(method = 'lm',
               se = FALSE, 
               color = 'black') + 
-  scale_color_manual(values = colors) + 
+  scale_color_manual(values = colors, limits = force) +
   xlab('sequence number') + 
   ylab(expression(delta^2*H[deviation])) + 
   ggtitle('Uncorrected') + 
@@ -236,14 +262,14 @@ if(oxygen_drift) {
 
 if(hydrogen_drift) {
   # generate a calibration
-H_drift_fit <- hydrogen %>% 
+  H_drift_fit <- hydrogen %>% 
     filter(id2 %in% drift_material) %>%
     lm(d2H_dev ~ seq_nr, data = .)
   
   # apply the calibration
   hydrogen <- hydrogen %>% 
     mutate(d2H_measured = d2H_measured - predict(H_drift_fit, 
-                                                   newdata = hydrogen)) %>%
+                                                 newdata = hydrogen)) %>%
     # recalculate deviations
     group_by(id2) %>%
     mutate(d2H_dev = d2H_measured - mean(d2H_measured)) %>%
@@ -266,7 +292,7 @@ if(oxygen_drift){
     geom_smooth(method = 'lm',
                 se = FALSE, 
                 color = 'black') + 
-    scale_color_manual(values = colors) + 
+    scale_color_manual(values = colors, limits = force) + 
     xlab('sequence number') + 
     ylab(expression(delta^18*O[deviation])) + 
     ggtitle('Corrected') + 
@@ -286,7 +312,7 @@ if(hydrogen_drift){
     geom_smooth(method = 'lm',
                 se = FALSE, 
                 color = 'black') + 
-    scale_color_manual(values = colors) + 
+    scale_color_manual(values = colors, limits = force) + 
     xlab('sequence number') + 
     ylab(expression(delta^2*H[deviation])) + 
     ggtitle('Corrected') + 
@@ -303,11 +329,17 @@ Oxygen isotope compositional drift over the period of analysis was monitored usi
 if(oxygen_drift){
   plot_grid(O_drift_uncorrected, O_drift_corrected)
 }
+```
 
+## Hydrogen Drift Correction
+Hydrogen isotope compositional drift over the period of analysis was monitored using the **`r paste(drift_material, collapse = ' and ')`** reference material(s). Since a drift correction was `r ifelse(hydrogen_drift,' ','not')` requested, A **`r if(oxygen_drift_model == 'lm') {paste('linear')} else if(hydrogen_drift_model == 'loess') {paste('loess')}`** model was `r ifelse(hydrogen_drift,' ','not')` subtracted from the raw data.
+
+```{r, echo = FALSE, message = FALSE, fig.align='center', warning = FALSE}
 if(hydrogen_drift){
   plot_grid(H_drift_uncorrected, H_drift_corrected)
 }
 ```
+
 
 # Linearity Corrections {.tabset}
 ```{r, echo = FALSE}
@@ -335,7 +367,7 @@ O_lin_uncorrected <- oxygen %>%
   geom_smooth(method = 'lm',
               se = FALSE, 
               color = 'black') + 
-  scale_color_manual(values = colors) + 
+  scale_color_manual(values = colors, limits = force) + 
   xlab('mass 28 peak area (mV/s)') + 
   ylab(expression(delta^18*O[deviation])) + 
   ggtitle('Uncorrected') + 
@@ -352,7 +384,7 @@ H_lin_uncorrected <- hydrogen %>%
   geom_smooth(method = 'lm',
               se = FALSE, 
               color = 'black') + 
-  scale_color_manual(values = colors) + 
+  scale_color_manual(values = colors, limits = force) + 
   xlab('mass 28 peak area (mV/s)') + 
   ylab(expression(delta^12*H[deviation])) + 
   ggtitle('Uncorrected') + 
@@ -402,7 +434,7 @@ O_lin_corrected <- oxygen %>%
   geom_smooth(method = 'lm',
               se = FALSE, 
               color = 'black') + 
-  scale_color_manual(values = colors) + 
+  scale_color_manual(values = colors, limits = force) + 
   xlab('mass 28 peak area (mV/s)') + 
   ylab(expression(delta^18*O[deviation])) + 
   ggtitle('Corrected') + 
@@ -419,23 +451,29 @@ H_lin_corrected <- hydrogen %>%
   geom_smooth(method = 'lm',
               se = FALSE, 
               color = 'black') + 
-  scale_color_manual(values = colors) + 
+  scale_color_manual(values = colors, limits = force) + 
   xlab('mass 28 peak area (mV/s)') + 
   ylab(expression(delta^2*H[deviation])) + 
   ggtitle('Corrected') + 
-  coord_cartesian(ylim = O_ylims) + 
+  coord_cartesian(ylim = H_ylims) + 
   guides(color=guide_legend(ncol=2))
 
 ```
 
 ## Oxygen Linearity Correction
-Mass linearity of oxygen isotope compositions  was monitored using the **`r paste(linearity_material, collapse = ' and ')`** reference material(s). Since a linearity correction was `r ifelse(oxygen_linearity,' ','not')` requested, A linear trend with an $r^2$ of **`r round(O_lin_sum$r.squared, 2)`** was `r ifelse(oxygen_linearity,' ','not')` subtracted from the raw data.
+Mass linearity of oxygen isotope compositions was monitored using the **`r paste(linearity_material, collapse = ' and ')`** reference material(s). Since a linearity correction was `r ifelse(oxygen_linearity,' ','not')` requested, A linear trend with an $r^2$ of **`r round(O_lin_sum$r.squared, 2)`** was `r ifelse(oxygen_linearity,' ','not')` subtracted from the raw data.
 
 ```{r, echo = FALSE, message = FALSE, fig.align='center'}
 if(oxygen_linearity) {
   plot_grid(O_lin_uncorrected, O_lin_corrected)
 }
 
+```
+
+## Hydrogen Linearity Correction
+Mass linearity of hydrogen isotope compositions was monitored using the **`r paste(linearity_material, collapse = ' and ')`** reference material(s). Since a linearity correction was `r ifelse(oxygen_linearity,' ','not')` requested, A linear trend with an $r^2$ of **`r round(H_lin_sum$r.squared, 2)`** was `r ifelse(hydrogen_linearity,' ','not')` subtracted from the raw data.
+
+```{r, echo = FALSE, message = FALSE, fig.align='center'}
 if(hydrogen_linearity) {
   plot_grid(H_lin_uncorrected, H_lin_corrected)
 }
@@ -446,11 +484,11 @@ if(hydrogen_linearity) {
 ```{r, echo = FALSE}
 # add the standards 
 oxygen <- oxygen %>% 
-  full_join(standards %>% 
+  left_join(standards %>% 
               filter(id2 %in% standards_used), by = 'id2')
 
 hydrogen <- hydrogen %>% 
-  full_join(standards %>% 
+  left_join(standards %>% 
               filter(id2 %in% standards_used), by = 'id2')
 ```
 
@@ -462,14 +500,12 @@ O_scale <- oxygen %>%
                        y = d18O_true,
                        color = id2)) + 
   geom_point(size = 3) + 
-  scale_color_manual(values = colors) +
+  scale_color_manual(values = colors, limits = force) +
   geom_smooth(method = 'lm', aes(group = 1), color = 'black') + 
   theme(legend.position = 'top') + 
   xlab(expression(delta^18*O[measured])) + 
   ylab(expression(delta^18*O[accepted])) + 
   guides(color=guide_legend(ncol=2))
-
-
 
 H_scale <- hydrogen %>% 
   filter(id2 %in% standards_used) %>% 
@@ -477,7 +513,7 @@ H_scale <- hydrogen %>%
                        y = d2H_true,
                        color = id2)) + 
   geom_point(size = 3) + 
-  scale_color_manual(values = colors) +
+  scale_color_manual(values = colors, limits = force) +
   geom_smooth(method = 'lm', aes(group = 1), color = 'black') + 
   theme(legend.position = 'top') + 
   xlab(expression(delta^2*H[measured])) + 
@@ -488,26 +524,21 @@ plot_grid(O_scale, H_scale)
 ```
 
 ```{r, echo = FALSE}
-  O_std_fit <- oxygen %>%  
-    filter(id2 %in% standards_used) %>% 
-    lm(formula = d18O_true ~ d18O_measured, data = .)
-  
-  oxygen <- oxygen %>% 
-    mutate(d18O_corrected = predict(O_std_fit, newdata = oxygen))
-  
-  
-  H_std_fit <- hydrogen %>%  
-    filter(id2 %in% standards_used) %>% 
-    lm(formula = d2H_true ~ d2H_measured, data = .)
-  
-  hydrogen <- hydrogen %>% 
-    mutate(d2H_corrected = predict(H_std_fit, newdata = hydrogen))
+O_std_fit <- oxygen %>%  
+  filter(id2 %in% standards_used) %>% 
+  lm(formula = d18O_true ~ d18O_measured, data = .)
 
-```
+oxygen <- oxygen %>% 
+  mutate(d18O_corrected = predict(O_std_fit, newdata = oxygen))
 
-```{r, echo = FALSE}
-O_r2 <-O_std_fit %>% summary() %>% pluck('r.squared')
-H_r2 <-H_std_fit %>% summary() %>% pluck('r.squared')
+
+H_std_fit <- hydrogen %>%  
+  filter(id2 %in% standards_used) %>% 
+  lm(formula = d2H_true ~ d2H_measured, data = .)
+
+hydrogen <- hydrogen %>% 
+  mutate(d2H_corrected = predict(H_std_fit, newdata = hydrogen))
+
 ```
 
 The isotope composition of unknowns samples were corrected to the international SMOW ($\delta^{18}O$) scale using the **`r paste(standards_used, collapse = ' and ')`** standard reference materials. Isotope compositions for standard reference materials are shown in the **Table 1**.
@@ -516,36 +547,135 @@ The isotope composition of unknowns samples were corrected to the international 
 standards %>% 
   filter(id2 %in% standards_used) %>%
   select(id2, 
-         d18O_true) %>% 
+         d18O_true,
+         d2H_true) %>% 
   knitr::kable(col.names = c('standard', 
-                             '$\\delta^{18}O$'),
+                             '$\\delta^{18}O$',
+                             '$\\delta^{2}H$'),
                caption = 'Table 1: Certified isotope compositions for standard reference materials')
 ```
+
+# Elemental Content
+
+```{r echo=FALSE, fig.align='center', message=FALSE}
+O_weight <- oxygen %>% 
+  filter(id2 %in% weight_percent_material) %>% 
+  ggplot(mapping = aes(x = area28, 
+                       y = weight_oxygen,
+                       color = id2)) + 
+  geom_point(size = 3) + 
+  scale_color_manual(values = colors, limits = force) + 
+  theme(legend.position = 'top') + 
+  geom_smooth(aes(group = 1), color = 'black', method = 'lm') + 
+  xlab('mass 28 peak area (mV/s)') + 
+  ylab('oxygen content (mg)') + 
+  guides(color=guide_legend(ncol=2))
+
+H_weight <- hydrogen %>% 
+  filter(id2 %in% weight_percent_material) %>% 
+  ggplot(mapping = aes(x = area2, 
+                       y = weight_hydrogen,
+                       color = id2)) + 
+  geom_point(size = 3) + 
+  scale_color_manual(values = colors, limits = force) + 
+  theme(legend.position = 'top') + 
+  geom_smooth(aes(group = 1), color = 'black', method = 'lm') + 
+  xlab('mass 2 peak area (mV/s)') + 
+  ylab('hydrogen content (mg)') + 
+  guides(color=guide_legend(ncol=2))
+
+plot_grid(O_weight, H_weight)
+```
+
+```{r, echo = FALSE}
+O_wt_fit <- oxygen %>% 
+  filter(id2 %in% weight_percent_material) %>% 
+  lm(formula = weight_oxygen ~ area28, data = .)
+oxygen <- oxygen %>% 
+  mutate(O_wt_percent = predict(O_wt_fit, newdata = oxygen) / weight * 100)
+
+H_wt_fit <- hydrogen %>% 
+  filter(id2 %in% weight_percent_material) %>% 
+  lm(formula = weight_hydrogen ~ area2, data = .)
+hydrogen <- hydrogen %>% 
+  mutate(H_wt_percent = predict(H_wt_fit, newdata = hydrogen) / weight * 100)
+```
+
+Total oxygen and hydrogen contents were calculated using the **`r paste(weight_percent_material, collapse = ' and ')`** reference materials. Certified carbon and nitrogen contents for these reference materials are shown in the **Table 2**.
+
+```{r, echo = FALSE}
+standards %>% 
+  filter(id2 %in% weight_percent_material) %>%
+  select(id2, 
+         O_percent, 
+         H_percent) %>% 
+  knitr::kable(col.names = c('standard', 
+                             '$O \\%$', 
+                             '$H \\%$'),
+               caption = 'Table 2: Certified elemental contents for standard reference materials')
+```
+
+
 
 # Final Data {.tabset}
 
 ```{r, echo = FALSE, message = FALSE}
 
-final_data <- data %>% 
-  select(Identifier_1 = id1, 
+oxygen <- oxygen |> 
+  select(Identifier_1 = id1,
          sample = id2, 
-         amount = weight,
-         `Area 28` = area28,
-         `Area 30`= area30,
-         d18O_corrected)
+         amount = weight, 
+         area_28 = area28,
+         d18O_corrected,
+         O_wt_percent)
+
+hydrogen <- hydrogen |> 
+  select(Identifier_1 = id1,
+         sample = id2, 
+         amount = weight, 
+         area_2 = area2,
+         d2H_corrected,
+         H_wt_percent)
+
+
+final_data <- oxygen |> full_join(hydrogen) |> 
+  select(Identifier_1,
+         sample,
+         amount,
+         area_28,
+         area_2,
+         d18O_corrected,
+         d2H_corrected,
+         O_wt_percent,
+         H_wt_percent)
+
 ```
+
 ## Summary 
 ```{r, echo = FALSE, message = FALSE}
 final_data %>% 
   filter(sample %in% c(standards_used, check_material, drift_material, linearity_material)) %>% 
   group_by(sample) %>% 
-  summarise(d18O_mean = mean(d18O_corrected),
+  summarise(d2H_mean = mean(d2H_corrected),
+            d2H_sd   = sd(d2H_corrected),
+            d18O_mean = mean(d18O_corrected),
             d18O_sd = sd(d18O_corrected),
+            H_wt_percent_mean = mean(H_wt_percent),
+            H_wt_percent_sd   = sd(H_wt_percent),
+            O_wt_percent_mean = mean(O_wt_percent),
+            O_wt_percent_sd   = sd(O_wt_percent),
+            
             n = n()) %>% 
   knitr::kable(digits = 2, 
                col.names = c('sample', 
+                             '$\\delta^{2}H_{mean}$', 
+                             '$\\delta^{2}H_{sd}$', 
                              '$\\delta^{18}O_{mean}$', 
                              '$\\delta^{18}O_{sd}$', 
+                             '$H \\%_{mean}$',
+                             '$H \\%_{sd}$',
+                             '$O \\%_{mean}$',
+                             '$O \\%_{sd}$',
                              'n'),
                caption = 'Summary statistics for standard 
               reference materials and in house reference materials.')
@@ -560,21 +690,24 @@ final_data %>%
                              'sample',
                              'amount (mg)', 
                              'area 28',
-                             'area 30',
-                             '$\\delta^{18}O$'), 
+                             'area 2',
+                             '$\\delta^{18}O$',
+                             '$\\delta^{2}H$',
+                             '$O \\%$',
+                             '$H \\%$'), 
                caption = 'Corrected isotope compositions.')
 ```
 
 ```{r, echo = FALSE, message = FALSE}
 
-final_data %>% 
-  arrange(sample) %>% 
+final_data %>%
+  arrange(sample) %>%
   write_csv(path = paste0('~/Box Sync/Data Repository/TCEA/Corrected/',current_year,'/',file_name,'/',file_name,'_corrected.csv'))
 
-raw_data %>% 
+raw_data %>%
   write_csv(path = paste0('~/Box Sync/Data Repository/TCEA/Corrected/',current_year,'/',file_name,'/',file_name,'_raw.csv'))
 
 
-file.copy(from = 'TCEA_tidy_reduction.Rmd', 
+file.copy(from = 'TCEA_tidy_reduction.Rmd',
           to = paste0('~/Box Sync/Data Repository/TCEA/Corrected/',current_year,'/',file_name,'/',file_name,'_code.Rmd'))
 ```

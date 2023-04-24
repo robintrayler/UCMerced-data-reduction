@@ -62,7 +62,7 @@ names(colors) <- c(standards$id2, TRUE)
 
 ```{r}
 # file path to the isodat csv file 
-file_path <- '~/Box Sync/Data Repository/Gasbench/GB20220613.csv'
+file_path <- '~/Box Sync/Data Repository/Gasbench/GB20230407.csv'
 ```
 
 ```{r, echo = FALSE}
@@ -114,10 +114,10 @@ standards_used = c('NBS 18', 'CM', 'USGS 44')
 linearity_material = c('NBS 18', 'CM')
 # linearity_material = c('alpha low', 'alpha high')
 # material to use for drift corrections
-drift_material = c('NBS 18', 'CM')
+drift_material = c('NBS 18', 'CM', 'USGS 44')
 # drift_material = c('alpha low', 'alpha high')
 # material to use for weight calculations
-# weight_percent_material = c('NBS 18', 'USGS 44', 'CM')
+weight_percent_material = c('NBS 18', 'USGS 44', 'CM')
 # in house 'check' materials for run quality
 check_material = c('NIST 120C')
 # check_material = c('alpha mid')
@@ -652,7 +652,7 @@ oxygen_rep <- paste0(names,
                      ')')
 ```
 
-The $\delta^{13}C$ and $\delta^{18}O$ values and elemental carbon and nitrogen contents of all samples were measured in the Stable Isotope Ecosystem Laboratory at the University of California, Merced, using a *Thermofisher Gasbench II* coupled with a *Delta V Plus Continuous Flow Isotope Ratio Mass Spectrometer*. Carbon and oxygen isotope compositions were corrected for instrument drift, mass linearity and standardized to the international VPDB using the `r knitr::combine_words(standards_used)` standard reference materials. Mean isotope compositions for reference materials were `r knitr::combine_words(carbon_rep)` and `r knitr::combine_words(oxygen_rep)` for $\delta^{13}C$ and $\delta^{18}O$ respectively. All isotope compositions are expressed in standard delta notations where:
+The $\delta^{13}C$ and $\delta^{18}O$ values of all samples were measured in the Stable Isotope Ecosystem Laboratory at the University of California, Merced, using a *Thermofisher Gasbench II* coupled with a *Delta V Plus Continuous Flow Isotope Ratio Mass Spectrometer*. Carbon and oxygen isotope compositions were corrected for instrument drift, mass linearity and standardized to the international VPDB using the `r knitr::combine_words(standards_used)` standard reference materials. Mean isotope compositions for reference materials were `r knitr::combine_words(carbon_rep)` and `r knitr::combine_words(oxygen_rep)` for $\delta^{13}C$ and $\delta^{18}O$ respectively. All isotope compositions are expressed in standard delta notations where:
 
 $$ 
 \delta = (\frac{R_{sample}}{R_{standard}} - 1) \times 1000

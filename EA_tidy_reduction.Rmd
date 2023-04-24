@@ -13,8 +13,6 @@ output:
     toc_depth: '2'
 ---
 
-
-
 ```{css, echo=FALSE}
 .block-format {
   background-color: lightgrey2;
@@ -54,16 +52,19 @@ theme_set(theme_bw()) # set ggplot theme
 ```
 
 ```{r, echo = FALSE}
+# define z score function
 z_score <- function(x) {
   abs(x - mean(x)) / sd(x)
 }
 ```
 
 ```{r, echo = FALSE, message = FALSE}
+# table of standard values
 standards <- tribble(~id2, ~d13C_true, ~d15N_true, ~C_percent, ~N_percent,
                      'USGS 40', -26.39, -4.52, 40.8, 9.52,
                      'USGS 41a', 36.55, 47.55, 40.8, 9.52,
-                     'costech acetanilide', NA, NA, 71.09, 10.36) 
+                     'costech acetanilide', NA, NA, 71.09, 10.36,
+                     'EA acetanilide', NA, NA, 71.09, 10.36) 
 
 # set consistent colors for standards 
 colors <- viridis(n = length(standards$id2) + 1, end = 0.8, option = 'D')
@@ -76,7 +77,7 @@ names(colors) <- c(standards$id2)
 
 ```{r}
 # file path to the isodat csv file 
-file_path <- '~/Box Sync/Data Repository/EA/EA20220613.csv'
+file_path <- '~/Box Sync/Data Repository/EA/EA20230421.csv'
 ```
 
 ```{r, echo = FALSE}
@@ -119,7 +120,7 @@ carbon_only   <- FALSE # should only carbon data be corrected?
 
 ```{r}
 # rejection criteria
-small_peaks <- 500 # warn about peaks smaller with an amplitude smaller than this
+small_peaks <- 300 # warn about peaks smaller with an amplitude smaller than this
 # should 2 sigma outlier standards be dropped from isotope corrections
 drop_outliers <- FALSE 
 ```
@@ -132,11 +133,17 @@ standards_used = c('USGS 41a', 'USGS 40')
 # material to use for linearity corrections
 linearity_material = c('USGS 40')
 # material to use for drift corrections
-drift_material = c('USGS 41a', 'costech acetanilide')
+drift_material = c('USGS 41a', 'EA acetanilide')
 # material to use for weight calculations
-weight_percent_material = c('USGS 40', 'USGS 41a', 'costech acetanilide')
+weight_percent_material = c('USGS 40', 'USGS 41a', 'EA acetanilide')
 # in house 'check' materials for run quality
-check_material = c('EA sed', 'MB squid', 'peach', 'EA gelatin', 'Mb squid', 'costech acetanilide')
+check_material = c('EA sed', 
+                   'MB squid', 
+                   'peach', 
+                   'EA gelatin', 
+                   'Mb squid', 
+                   'costech acetanilide',
+                   'EA acetanilide')
 ```
 
 ## Drift and Linearity Model Specification
@@ -169,7 +176,7 @@ carbon_linearity <- TRUE
 ```{r, message = FALSE, echo = FALSE}
 # read data
 raw_data <- read_csv(file = file_path)
-
+# parse and rename columns 
 data <- raw_data %>% 
   select(date = Date,
          time = Time,
@@ -185,7 +192,8 @@ data <- raw_data %>%
          d13C_measured = `d 13C/12C`,
          d15N_measured = `d 15N/14N`) %>% 
   mutate(date_time = mdy(date) + hms(time),
-         id2 = factor(id2))
+         id2 = factor(id2)) %>% 
+  mutate(weight = as.numeric(weight))
 
 # add some dummy values if only running for nitrogen or carbon
 if(nitrogen_only) {
@@ -207,7 +215,7 @@ if(carbon_only) {
 # separate out the carbon data ------------------------------------------------
 carbon <- data %>% 
   filter(peak_nr == carbon_peak) %>% 
-  full_join(standards, by = 'id2') %>% 
+  left_join(standards, by = 'id2') %>% 
   group_by(id2) %>% 
   mutate(d13C_dev = d13C_measured - mean(d13C_measured)) %>% 
   ungroup() %>% 
@@ -218,7 +226,7 @@ carbon <- data %>%
 # separate out the nitrogen data ----------------------------------------------
 nitrogen <- data %>% 
   filter(peak_nr == nitrogen_peak) %>% 
-  full_join(standards, by = 'id2') %>% 
+  left_join(standards, by = 'id2') %>% 
   group_by(id2) %>% 
   mutate(d15N_dev = d15N_measured - mean(d15N_measured)) %>% 
   ungroup() %>% 
@@ -228,7 +236,7 @@ nitrogen <- data %>%
 ## Check for Missing Peaks
 
 ```{r, echo = FALSE, message = FALSE}
-# check for missing peaks
+# check for missing or too many peaks 
 missing <- data %>% 
   group_by(id1) %>% 
   summarize(n = !(n() == total_peaks))
@@ -239,6 +247,7 @@ Sample(s) with an Identifier 1 of **`r missing$id1[missing$n]`** have fewer peak
 ## Check for Small Peaks
 
 ```{r, echo = FALSE}
+# check if any peaks are smaller than the threshold
 small_N <- data %>% 
   filter(peak_nr %in% nitrogen_peak & amp28 < small_peaks) %>% 
   select(id1)
@@ -395,6 +404,7 @@ if(nitrogen_drift) {
 Nitrogen isotope compositional drift over the period of analysis was monitored using the **`r paste(drift_material, collapse = ' and ')`** reference material(s). Since a drift correction was `r ifelse(carbon_drift,' ','not')` requested, A **`r if(nitrogen_drift_model == 'lm') {paste('linear')} else if(nitrogen_drift_model == 'loess') {paste('loess')}`** model was `r ifelse(nitrogen_drift,' ','not')` subtracted from the raw data.
 
 ```{r, echo = FALSE, message = FALSE, fig.align='center', warning = FALSE}
+# only plot the results if a correction happened
 if(nitrogen_drift) {
   plot_grid(N_drift_uncorrected, N_drift_corrected)
 }
@@ -405,6 +415,7 @@ if(nitrogen_drift) {
 Carbon isotope compositional drift over the period of analysis was monitored using the **`r paste(drift_material, collapse = ' and ')`** reference material(s). Since a drift correction was `r ifelse(carbon_drift,' ','not')` requested, A **`r if(carbon_drift_model == 'lm') {paste('linear')} else if(carbon_drift_model == 'loess') {paste('loess')}`** model was `r ifelse(carbon_drift,' ','not')` subtracted from the raw data.
 
 ```{r, echo = FALSE, message = FALSE, fig.align='center', warning = FALSE}
+# only plot the results if a correction happened
 if(carbon_drift) {
   plot_grid(C_drift_uncorrected, C_drift_corrected)
 }
@@ -413,6 +424,7 @@ if(carbon_drift) {
 # Linearity Corrections {.tabset}
 
 ```{r, echo = FALSE}
+# figur out limits for the plots
 N_ylims <- nitrogen %>% 
   filter(id2 %in% linearity_material) %>% 
   select(d15N_dev) %>% 
@@ -587,6 +599,7 @@ plot_grid(N_scale, C_scale)
 ```
 
 ```{r, echo = FALSE}
+# optionally drop 2-sigma outliers
 if(drop_outliers){
   C_std_fit <- carbon %>%  
     filter(id2 %in% standards_used) %>% 
@@ -624,6 +637,7 @@ if(drop_outliers){
 ```
 
 ```{r, echo = FALSE}
+# grab r2 values. This currently doesn't do anything
 N_r2 <- N_std_fit %>% summary() %>% pluck('r.squared')
 
 C_r2 <- C_std_fit %>% summary() %>% pluck('r.squared')
@@ -632,6 +646,7 @@ C_r2 <- C_std_fit %>% summary() %>% pluck('r.squared')
 The isotope composition of unknowns samples were corrected to the international PDB ($\delta^{13}C$) and Air ($\delta^{15}N$) scales using the **`r paste(standards_used, collapse = ' and ')`** standard reference materials. Isotope compositions for standard reference materials are shown in the **Table 1**.
 
 ```{r, echo = FALSE}
+# get certified isotope compositions for the standards and make a table
 standards %>% 
   filter(id2 %in% standards_used) %>%
   select(id2, 
@@ -738,6 +753,7 @@ final_data <- full_join(carbon, nitrogen) %>%
          C_wt_percent) %>% 
   mutate(`C/N` = C_wt_percent/N_wt_percent)
 
+# if only correcting one element, set the other to NA
 if(nitrogen_only) {
   final_data <- final_data %>% 
     mutate(`Area 44` = NA,
@@ -757,6 +773,7 @@ if(carbon_only) {
 ```
 
 ```{r, echo = FALSE, message = FALSE}
+# summarize the reference materials
 summary_table <- final_data %>% 
   filter(sample %in% c(standards_used, check_material, drift_material, linearity_material)) %>% 
   group_by(sample) %>% 
@@ -788,6 +805,7 @@ summary_table %>% knitr::kable(digits = 2,
 ## Full Data Table
 
 ```{r, echo = FALSE}
+# full data table 
 final_data %>%
   arrange(sample) %>%
   mutate_if(is.numeric, round, 3) %>%
@@ -878,6 +896,7 @@ The text and numbers above refer *only* to data included in this report. If you 
 We thank Dr. [Robin B. Trayler](https://www.youtube.com/watch?v=dQw4w9WgXcQ) and the staff of the the Stable Isotope Ecosystems Laboratory of UC Merced for their assistance with stable isotope and elemental analysis.
 
 ```{r, echo = FALSE, message = FALSE, warning=FALSE}
+# write the final data to a file in with the correct name
 final_data %>% 
   arrange(sample) %>% 
   write_csv(file = paste0('~/Box Sync/Data Repository/EA/Corrected/',current_year,'/',file_name,'/',file_name,'_corrected.csv'))

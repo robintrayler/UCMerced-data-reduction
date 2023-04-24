@@ -31,7 +31,7 @@ output:
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
-
+ 
 The $\delta^{18}O$ values  of all samples were measured using a **ThermoFisher TC/EA** coupled with a **Delta V Plus Continuous Flow Isotope Ratio Mass Spectrometer** housed in the Stable Isotope Facility at the University of California, Merced. 
 
 This report includes several files:
@@ -76,7 +76,7 @@ names(colors) <- c(standards$id2, TRUE)
 ## File Path
 ```{r}
 # file path to the isodat csv file 
-file_path <- '~/Box Sync/Data Repository/TCEA/TCEA20220429.csv'
+file_path <- '~/Box Sync/Data Repository/TCEA/TCEA20230317.csv'
 ```
 
 ## Analysis Parameters
@@ -85,7 +85,7 @@ file_path <- '~/Box Sync/Data Repository/TCEA/TCEA20220429.csv'
 # Which peak is the CO analyte?
 oxygen_peak <- 3
 # How many total peaks should there be?
-total_peaks <- 1
+total_peaks <- 5
 ```
 
 ### Set Rejection Criteria

@@ -63,7 +63,8 @@ storage %>%
   group_by(sample) %>% 
   summarise(d18O_mean = mean(d18O_corrected),
             d18O_sd = sd(d18O_corrected),
-            n = n())
+            n = n()) %>% 
+  knitr::kable()
 
 
 storage %>% 
