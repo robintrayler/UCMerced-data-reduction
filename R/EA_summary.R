@@ -16,6 +16,7 @@ file_path <- "~/Box Sync/Data Repository/EA/Corrected/"
 standards <- c('USGS 40', 
                'USGS 41a', 
                'costech acetanilide',
+               'EA acetanilide',
                'EA sed',
                'peach',
                'Peach', 
@@ -51,7 +52,7 @@ storage <- files %>%
   mutate(C_wt_percent = as.numeric(C_wt_percent),
          N_wt_percent = as.numeric(N_wt_percent))
 
-# fix some miss named samples 
+# fix some missnamed samples 
 storage <- storage %>% 
   mutate(sample = case_when(sample == 'Peach' ~ 'peach', 
                             sample == 'Mb squid' ~'MB squid',
@@ -74,8 +75,8 @@ storage %>%
   ggplot(mapping = aes(x = d13C_dev,
                        fill = sample),
          ) + 
-  geom_density(color = NA) + 
-  facet_wrap(~sample, scales = 'free+y') + 
+  geom_density(color = NA, adjust = 2) + 
+  facet_wrap(~sample, scales = 'free_y') + 
   xlim(-1, 1)
 
 
@@ -126,11 +127,3 @@ storage %>%
 
 
 
-storage %>% 
-  filter(!(sample %in% c('MB squid', 'peach'))) %>% 
-  group_by(sample) %>% 
-  summarize(C_wt = mean(C_wt_percent, na.rm = TRUE),
-            C_sd = sd(C_wt_percent, na.rm = TRUE)) %>% 
-  mutate(C_error = C_sd / C_wt * 100) %>% 
-  ungroup( ) %>% 
-  pull(C_error) %>% mean()
