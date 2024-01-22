@@ -65,6 +65,11 @@ storage <- storage %>%
   ungroup()
 
 
+storage |> 
+  filter(sample == 'MB squid') |> 
+  mutate(C_N = C_wt_percent / N_wt_percent) |> 
+  summarize(sd = sd(C_N, na.rm = T))
+
 
 
 
@@ -114,7 +119,7 @@ x <- storage %>%
 
 storage %>%  
   group_by(sample) %>% 
-  # filter(sample != 'EA sed') |>
+  filter(sample != 'EA sed') |>
   mutate(C_wt_dev = C_wt_percent - mean(C_wt_percent), 
          N_wt_dev = N_wt_percent - mean(N_wt_percent), 
          d13C_dev = d13C_corrected - mean(d13C_corrected, na.rm = TRUE),

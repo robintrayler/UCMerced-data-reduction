@@ -11,7 +11,7 @@ standards_used <- c('LGR 1', 'LGR 3', 'LGR 5')
 discard <- 3
 
 # load the raw data 
-data <- read_csv(file = '~/Desktop/h2o_19791231_019.txt',
+data <- read_csv(file = '~/Box Sync/Data Repository/LWIA/h2o_19791231_007.txt',
                  skip = 1)
 
 # find where the data ends

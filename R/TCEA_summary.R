@@ -10,12 +10,13 @@ zscore <- function(x){
 }
 
 # define file path ------------------------------------------------------------
-file_path <- "~/Box Sync/Data Repository/TCEA/Corrected/2022"
+file_path <- "~/Box Sync/Data Repository/TCEA/Corrected/"
 
 # reference materials to check ------------------------------------------------
 standards <- tribble(~sample,      ~d18O_corrected,
                      'USGS 80',   13.1,
-                     'USGS 81',   35.4)
+                     'USGS 81',   35.4,
+                     'EA Ag3PO4', ~10)
                      # 'IAEA 601',  23.3)
                      # 'alfa asar',   NA)
 
@@ -45,7 +46,8 @@ storage <- read_csv(file = files[1]) %>%
 
 for(i in 2:length(files)) {
   storage <- read_csv(file = files[i], col_names = T) %>% 
-    select(Identifier_1, sample, 
+    select(Identifier_1, 
+           sample, 
            d18O_corrected) %>% 
     mutate(date = ymd(str_sub(basename(files[i]), start = 5, end = 12))) %>% 
     full_join(storage)
@@ -72,7 +74,8 @@ storage %>%
                                  y = d18O_corrected,
                                  color = sample)) + 
   geom_point() + 
-  facet_wrap(~sample, scale = 'free_y') + 
+  facet_wrap(~sample, scale = 'free_y',
+             nrow = 2) + 
   geom_hline(data = standards,
              mapping = aes(yintercept = d18O_corrected))
 
